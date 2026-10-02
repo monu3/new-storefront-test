@@ -1,0 +1,43 @@
+# =============================================================================
+# Test profile — integration tests run against the LOCAL Postgres, not Testcontainers.
+#
+# Tests MUST use store_app_test, never store_app, and never storefront.
+# 'storefront' holds unrelated project data on this server and must never be
+# touched. See store-app-plan.md section 8.2 and risk R13.
+# ==============================================================================
+spring:
+  config:
+    # Reuse the git-ignored local credentials. Profile-specific files do NOT
+    # inherit application.yml's imports, so this must be repeated here.
+    import: "optional:classpath:application-local.yml"
+
+  datasource:
+    url: ${TEST_DB_URL:jdbc:postgresql://localhost:5432/store_app_test}
+    username: ${DB_USER:postgres}
+    # NOTE: password is deliberately NOT declared here. A key set in this file
+    # overrides the imported application-local.yml, and `${DB_PASSWORD:}`
+    # resolves to an empty string — which fails SCRAM auth. Omitting the key
+    # lets the real value come from the imported file.
+
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    open-in-view: false
+
+  flyway:
+    enabled: true
+    # Only the test profile may clean. This is a guard against running
+    # `flyway clean` against a dev database.
+    clean-disabled: false
+
+  rabbitmq:
+    host: ${RABBITMQ_HOST:localhost}
+    port: ${RABBITMQ_PORT:5672}
+    username: ${RABBITMQ_USER:monu}
+    # password omitted for the same reason as the datasource password above.
+
+logging:
+  level:
+    root: WARN
+    com.storefront.store: INFO
+    org.springframework.test: INFO

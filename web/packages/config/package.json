@@ -1,0 +1,12 @@
+{
+  "name": "@store-app/config",
+  "version": "0.0.1",
+  "private": true,
+  "description": "Shared TypeScript, ESLint and formatting config. Defines the packages-must-not-import-apps boundary.",
+  "files": ["tsconfig.base.json", "eslint"],
+  "exports": {
+    "./tsconfig.base.json": "./tsconfig.base.json",
+    "./eslint/next": "./eslint/next.js",
+    "./eslint/vite": "./eslint/vite.js"
+  }
+}

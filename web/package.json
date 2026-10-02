@@ -1,0 +1,24 @@
+{
+  "name": "store-app-web",
+  "version": "0.0.1",
+  "private": true,
+  "packageManager": "pnpm@10.23.0",
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "scripts": {
+    "dev": "turbo run dev --parallel",
+    "dev:customer": "pnpm --filter @store-app/customer dev",
+    "dev:console": "pnpm --filter @store-app/console dev",
+    "build": "turbo run build",
+    "typecheck": "turbo run typecheck",
+    "lint": "turbo run lint",
+    "test": "turbo run test",
+    "clean": "turbo run clean && rm -rf node_modules"
+  },
+  "devDependencies": {
+    "turbo": "^2.5.0",
+    "typescript": "^5.7.2",
+    "@types/node": "^22.10.0"
+  }
+}

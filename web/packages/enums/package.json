@@ -1,0 +1,24 @@
+{
+  "name": "@store-app/enums",
+  "version": "0.0.1",
+  "private": true,
+  "description": "Types and fetchers for the backend's hardcoded shop-type and product-category enums (D17/D18). The Java enums are the single source of truth; nothing here duplicates the list.",
+  "type": "module",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "lint": "echo \"no lint configured for enums\"",
+    "clean": "rm -rf .turbo node_modules"
+  },
+  "dependencies": {
+    "@tanstack/react-query": "^5.62.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.7.2",
+    "@store-app/config": "workspace:*"
+  }
+}
