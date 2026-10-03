@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">
+  <rect width="32" height="32" rx="7" fill="#16a34a"/>
+  <!-- A shop awning: three scallops over a counter. -->
+  <path d="M6 12h20l-1.6-4.2a1 1 0 0 0-.95-.7H8.55a1 1 0 0 0-.95.7Z" fill="#fff"/>
+  <rect x="8" y="14" width="16" height="2" fill="#fff" opacity=".9"/>
+  <rect x="8" y="19" width="16" height="7" rx="1.5" fill="#fff"/>
+</svg>

@@ -3313,3 +3313,226 @@ controls. (Rows it had committed to the test database were removed once.)
 
 Shop operations: orders board with bulk transitions, invoice generator, discount system, audience
 list, full shop settings, payment method configuration (including eSewa merchant credentials).
+
+---
+
+## Appendix P — Phase 3 follow-up: the blank page and the missing CSS
+
+Both were Phase 3 verification gaps, found only when a human opened the apps rather than when a
+test asserted on them. Worth recording because both fail *silently*.
+
+### D78 — `@store-app/auth` reads env from both Vite and Next.js
+
+`packages/auth/src/config.ts` did `process.env[key]`. That is fine in Next.js and fatal in the
+Vite console, which **does not define `process` in the browser at all**. The result was a
+`ReferenceError` thrown while the module was still evaluating — so nothing rendered and every
+page was white.
+
+Vite's `define` cannot rescue this: it only rewrites **static** `process.env.NAME` text, and this
+was a computed index. Nor would `define` necessarily apply, because the file lives in a linked
+workspace package served through Vite's `/@fs/` path rather than in the app root.
+
+`readEnv()` now tries `process.env` behind a `typeof` guard, then falls back to `import.meta.env`
+— which is how Vite exposes `VITE_*` variables. The guard matters: the bare reference must never
+be *evaluated* in a browser, not merely be absent.
+
+### D79 — React mounts before auth initialises
+
+`main.tsx` waited on `auth.init()` before rendering, to avoid a login-screen flash on reload. The
+cost was total: any rejection, and any promise that never settles, left a permanently white page
+with nothing to look at.
+
+It now renders first and authenticates second. `RequireRole` already redirects an unauthenticated
+visitor to `/login`, so the user reaches the login screen a few milliseconds later — and a login
+flash is a cosmetic annoyance next to a blank page with no error. The init failure is
+`console.error`'d rather than swallowed by `.finally()`.
+
+This compounded D78 into an invisible failure and is the reason the first diagnosis took a while:
+there was no error, no empty state, and no stack trace — just white.
+
+### D80 — the Next.js app had no Tailwind wiring at all
+
+Tailwind v4 is installed and the console uses `@tailwindcss/vite`. **The Next.js app declared
+neither `tailwindcss` nor `@tailwindcss/postcss`, and had no `postcss.config.mjs`.** Next.js does
+not go through the Vite plugin; it uses PostCSS. So `@import 'tailwindcss'` in `globals.css` was
+never processed, the emitted stylesheet was effectively empty, and the storefront rendered every
+element with the right class names and no styles at all.
+
+Fixed by declaring `@tailwindcss/postcss`, `postcss` and `tailwindcss` in
+`apps/customer/package.json` and adding `apps/customer/postcss.config.mjs`.
+
+Both frontend pipelines now stay independent — the console through Vite, the storefront through
+PostCSS — which is what lets them ship on different schedules.
+
+### What Phase 3 verification missed
+
+Everything in Appendix O was verified through the API and by inspecting server-rendered HTML.
+That proved the theme engine works and the storefront renders it. It did not prove that
+
+- the **console** boots in a browser, and
+- the storefront's **stylesheet** is non-empty.
+
+Both are only observable by loading the page. The lesson is narrow and worth keeping: *a build
+that succeeds and HTML that contains the right markup can still be a blank page or an unstyled
+one.* Neither failure produces an error, which is exactly what makes them easy to ship.
+
+### Current state after the fixes
+
+| | |
+|---|---|
+| Backend :8080 | UP — db, rabbit, redis, ssl |
+| Storefront :3000 | HTTP 200, stylesheet linked, `<h1>CUSTOMISED BY THE SHOP`, `--primary:#7c3aed`, 8 category links |
+| Gallery :3000 | HTTP 200, stylesheet linked, shop links render |
+| Console :5173 | HTTP 200, no `process` reference, 14 KB of CSS |
+
+Still to verify by hand, since no browser is attached to this session: **signing in through
+Keycloak** (it redirects to the remote realm and back to `localhost:5173`), and **clicking through
+the theme editor**.
+
+---
+
+## Appendix Q — the same `process` bug, three more times
+
+Appending to Appendix P, because the lesson is the same one and the repetition is the point.
+
+### The mistake
+
+Appendix P fixed **one** `process.env` reference — the one in the file the browser's stack trace
+named. There were four. `enums/hooks.ts`, `api-client/client.ts` and `theme-engine/registry.ts`
+each read environment variables at **module scope**, where a `ReferenceError` blanks the app
+before React mounts. Each surfaced as its own "still white page" report.
+
+Patching the file an error names, rather than grepping for the pattern, is how four became three.
+
+### Why Vite's `define` did not fix it
+
+The obvious fix was `define: { 'process.env': ... }` in `vite.config.ts`. It is configured now and
+kept — it covers any third-party dependency that reads `process.env` — but it **does not reach
+workspace packages served from outside the app root** via Vite's `/@fs/` path. Verified: with
+`define` in place, `/@fs/packages/enums/src/hooks.ts` still served
+`process.env.NEXT_PUBLIC_API_URL` verbatim.
+
+So the fix has to be in the source. Every shared package now uses a guarded read:
+
+```ts
+function readEnv(key: string): string | undefined {
+  if (typeof process !== 'undefined' && process.env) {
+    return process.env[key];
+  }
+  return (import.meta as unknown as { env?: Record<string, string | undefined> }).env?.[key];
+}
+```
+
+The `typeof` is load-bearing and is not stylistic: the bare reference must never be **evaluated**
+in a browser, not merely be absent.
+
+`auth/adapter.ts` and `auth/config.ts` now share one `readEnv` rather than each having their own,
+so the duplication that caused this cannot recur inside that package.
+
+### The rule this establishes
+
+**A package shared by two bundlers may not reference `process.env` or `import.meta.env` directly.**
+Neither bundler defines both, and neither tool warns at build or type-check time — the build
+succeeds, the types check, and the failure appears only as a blank page.
+
+All five env-reading modules were verified **as the browser receives them** over `/@fs/`, not by
+reading the source: zero unguarded references.
+
+### Favicon
+
+The console now declares `<link rel="icon" href="/favicon.svg">`, which is why Chrome had been
+requesting `/favicon.ico` and getting a 404 — it had nothing declared, so it guessed. A direct
+request for `/favicon.ico` still returns 404, which is normal and harmless once the icon is
+declared; the browser uses the declared SVG and does not ask again.
+
+### The general lesson, which is now three appendices running
+
+Phases 1–3 were verified through APIs, SQL assertions and server-rendered HTML. Every one of those
+checks passed while the console could not render a single pixel and the storefront had no
+stylesheet. None of them can catch these, because they are all failures of **delivery**, not of
+logic:
+
+- a bundle that throws before it renders,
+- a stylesheet that is emitted but empty,
+- a config value that never reaches the browser.
+
+The cheapest possible check — open the page — found all three in under a minute, and none of the
+several thousand automated assertions had. Any later phase should treat "load the page and look at
+it" as part of done, not as an optional extra.
+
+---
+
+## Appendix R — memoising an async initialisation, and the `AppShell` unhandled rejection
+
+Third console bug, and the first one in this sequence that is a genuine race rather than a
+configuration mistake.
+
+### D81 — cache the promise, not the result
+
+The adapter guarded re-initialisation like this:
+
+```ts
+async init() {
+  if (ready) return kc.authenticated;
+  ready = await kc.init({ ... });
+  return ready;
+}
+```
+
+`ready` stays `false` for the whole duration of the `await`, so it is not a guard at all — it only
+works if callers happen to be sequential. Two callers exist (`main.tsx` and `AppShell`), and React
+StrictMode double-invokes effects in development, so on every reload both fire `kc.init()` and the
+second throws:
+
+```
+Error: A 'Keycloak' instance can only be initialized once.
+```
+
+Fixed by memoising the **in-flight promise**. Every caller awaits the same initialisation, so
+`kc.init()` is called exactly once.
+
+The rejected case is cached too, deliberately. Retrying a failed `init()` would call `kc.init()`
+again, which is precisely the operation that throws; a second, louder failure is worse than one
+honest failure. `login()` can still be called explicitly.
+
+Reproduced and proven with a standalone test of the guard, since `keycloak-js` needs a browser:
+
+| | `kc.init()` calls | rejections |
+|---|---|---|
+| guard on result (before) | **3** | 2 |
+| guard on promise (after) | **1** | 0 |
+| init throws (after) | **1** | all callers see it |
+
+### D82 — an effect must handle rejection, or it becomes an unhandled promise
+
+`AppShell` did `void auth.init().then(…)`. A rejection therefore surfaced as an *unhandled promise
+rejection* — the `(in promise)` in the console — and, worse, `ready` was never set, so the shell sat
+on "Loading…" indefinitely with no route to a sensible screen.
+
+It now `.catch`es, logs, and **fails closed to `/login`**. Failing closed is the deliberate choice:
+an adapter that cannot initialise has no session to vouch for, and treating that as "signed in"
+would render a shell full of links that all 401.
+
+The effect also returns a `cancelled` flag. StrictMode's mount/unmount/remount cycle otherwise calls
+`setState` after unmount and logs a warning — harmless on its own, but it trains you to ignore
+warnings, which is how the real problem stayed hidden.
+
+### What these three console bugs have in common
+
+| Bug | Failure mode | Why no test caught it |
+|---|---|---|
+| `check-sso` never settles | white page, no error | the promise simply never resolved |
+| `process.env` at module scope | white page, one ReferenceError per file | build and typecheck both pass |
+| unguarded re-`init()` | unhandled rejection, console usable | needs two concurrent callers in a browser |
+
+All three are **delivery and lifecycle** problems. The theme engine, the API, the SQL and the
+5,679 backend tests were all green throughout — none of them execute a browser, and that is
+precisely where every one of these lived.
+
+Two process changes are now standing:
+
+1. **Load the page.** Any phase is not done until someone has opened it.
+2. **Front-end work gets a browser.** The checks in these appendices are all HTTP fetches of HTML,
+   CSS and served modules — useful, and still not a browser. Any check that asserts "the app works"
+   should be an actual load, and until a browser is attached to the development session that check
+   has to be done by hand.

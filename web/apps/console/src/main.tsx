@@ -90,14 +90,30 @@ if (!container) {
   throw new Error('#root not found');
 }
 
-// Initialise auth before rendering so a page reload does not flash the login screen for an
-// already-signed-in user.
-void auth.init().finally(() => {
-  createRoot(container).render(
-    <StrictMode>
-      <QueryClientProvider client={queryClient}>
-        <RouterProvider router={router} />
-      </QueryClientProvider>
-    </StrictMode>,
-  );
+/**
+ * Render first, initialise auth second.
+ *
+ * <p>The original order was `await auth.init()` then render, so that an already-signed-in user
+ * would not see the login screen flash on a reload. In exchange, **any** auth failure left a
+ * permanently white page — `init()` rejecting, or never settling, meant React never mounted and
+ * there was no error to look at. That is the worst possible symptom, and the flash it was
+ * avoiding is cosmetic.
+ *
+ * <p>So: mount immediately and let `RequireRole` sort out the session. It already redirects an
+ * unauthenticated visitor to `/login`, so the user sees the login screen a few milliseconds
+ * later instead of a blank page.
+ *
+ * <p>The error is logged rather than swallowed. A silent catch here is what made this take an
+ * hour to find.
+ */
+createRoot(container).render(
+  <StrictMode>
+    <QueryClientProvider client={queryClient}>
+      <RouterProvider router={router} />
+    </QueryClientProvider>
+  </StrictMode>,
+);
+
+void auth.init().catch((error: unknown) => {
+  console.error('[auth] initialisation failed; the console will require an explicit sign-in', error);
 });

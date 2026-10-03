@@ -28,13 +28,37 @@ export function AppShell({ auth }: { auth: AuthAdapter }) {
   const [user, setUser] = useState(() => resolveConsoleUser(auth.getSession()));
 
   useEffect(() => {
-    void auth.init().then((authenticated) => {
-      setUser(resolveConsoleUser(auth.getSession()));
-      setReady(true);
-      if (!authenticated) {
+    // `.catch` rather than a bare `void …then(…)`: an init failure would otherwise surface as an
+    // unhandled promise rejection with no route to a sensible screen, and `ready` would never be
+    // set — leaving the shell stuck on "Loading…" forever.
+    //
+    // Failing closed, to the login screen: an auth adapter that cannot initialise has no session
+    // to vouch for, and treating that as "signed in" would render a shell full of links that all
+    // 401. main.tsx logs the underlying error.
+    let cancelled = false;
+
+    void auth
+      .init()
+      .then((authenticated) => {
+        if (cancelled) return;
+        setUser(resolveConsoleUser(auth.getSession()));
+        setReady(true);
+        if (!authenticated) {
+          navigate('/login');
+        }
+      })
+      .catch((error: unknown) => {
+        console.error('[auth] initialisation failed', error);
+        if (cancelled) return;
+        setReady(true);
         navigate('/login');
-      }
-    });
+      });
+
+    // React StrictMode mounts, unmounts and remounts effects in development, so a second init
+    // would otherwise call setState after unmount and warn. Harmless, but it hides real warnings.
+    return () => {
+      cancelled = true;
+    };
   }, [auth, navigate]);
 
   if (!ready) {

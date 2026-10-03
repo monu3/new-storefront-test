@@ -1,5 +1,7 @@
 import Keycloak from 'keycloak-js';
 
+import { readEnv } from './config';
+
 import type { AuthConfig, RealmName } from './config';
 
 /**
@@ -45,6 +47,17 @@ export interface AuthAdapter {
 /**
  * Keycloak PKCE adapter.
  *
+ * <p><b>No silent SSO check, deliberately.</b> `onLoad: 'check-sso'` makes keycloak-js load a
+ * hidden iframe at `silentCheckSsoRedirectUri` and wait for Keycloak to post a callback back.
+ * Neither frontend serves that route — the Vite console answers it with the SPA shell (200, HTML)
+ * and the Next.js storefront answers 404 — so neither is a callback and the promise never
+ * settles. An explicit login is also the honest behaviour for a console that only shop owners and
+ * admins use: they should be asked who they are rather than silently relying on an ambient
+ * session.
+ *
+ * <p>Silent SSO can return with a real `/silent-check-sso` page per app. It needs that page to
+ * actually exist first.
+ *
  * Two deliberate choices:
  *
  * - `pkceMethod: 'S256'`, never `'plain'`. Both realms advertise `plain`, but the code verifier
@@ -60,6 +73,13 @@ export function createKeycloakAdapter(config: AuthConfig): AuthAdapter {
   });
 
   let ready = false;
+  /**
+   * The in-flight initialisation, memoised.
+   *
+   * <p>See {@link AuthAdapter.init}: caching the promise rather than the result is what makes
+   * concurrent calls safe, because `keycloak-js` permits exactly one `init()` per instance.
+   */
+  let initPromise: Promise<boolean> | null = null;
   let roles: AppRole[] = [];
 
   function readRoles(): AppRole[] {
@@ -89,17 +109,45 @@ export function createKeycloakAdapter(config: AuthConfig): AuthAdapter {
   }
 
   return {
-    async init() {
-      if (ready) return kc.authenticated;
-      ready = await kc.init({
-        onLoad: 'check-sso',
-        pkceMethod: 'S256',
-        checkLoginIframe: false,
-        silentCheckSsoRedirectUri: `${config.redirectUri}/silent-check-sso`,
-        enableLogging: process.env.NODE_ENV === 'development',
-      });
-      roles = readRoles();
-      return ready;
+    /**
+     * Initialises the adapter. Safe to call any number of times, from anywhere, concurrently.
+     *
+     * <p><b>No silent SSO check</b> — see the note on {@link createKeycloakAdapter}.
+     *
+     * <p><b>The in-flight promise is memoised, not the result.</b> The original guard was
+     * `if (ready) return ...; ready = await kc.init(...)`, which is not concurrency-safe: `ready`
+     * stays `false` for the whole await, so a second caller passes the guard and calls
+     * `kc.init()` again. `keycloak-js` rejects that with
+     *
+     * <pre>Error: A 'Keycloak' instance can only be initialized once.</pre>
+     *
+     * <p>Two callers reach here: `main.tsx` initialises so the session is ready, and
+     * `AppShell` initialises so it knows whether to redirect to `/login`. React's StrictMode
+     * also double-invokes effects in development, so the race fires on every reload. Caching the
+     * promise makes both callers await the *same* initialisation.
+     *
+     * <p>A rejected initialisation is cached too, deliberately: retrying would call `kc.init()`
+     * again, which is the exact thing that throws. One failure should not be retried into a
+     * second, louder failure — it should just fail, and `login()` can still be called explicitly.
+     */
+    init() {
+      if (!initPromise) {
+        initPromise = kc
+          .init({
+            // No onLoad, so the adapter only initialises. It does not try to authenticate.
+            pkceMethod: 'S256',
+            checkLoginIframe: false,
+            // Guarded read: this runs in the browser, where the console's Vite build has no
+            // `process`. See config.ts for the full explanation and plan Appendix P.
+            enableLogging: readEnv('NODE_ENV') === 'development',
+          })
+          .then((authenticated) => {
+            ready = authenticated;
+            roles = readRoles();
+            return authenticated;
+          });
+      }
+      return initPromise;
     },
 
     async login(returnTo?: string) {

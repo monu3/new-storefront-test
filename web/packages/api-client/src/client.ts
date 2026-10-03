@@ -1,7 +1,23 @@
 import { HttpError, NetworkError } from './errors';
 
+/**
+ * Reads an environment variable in both frontends.
+ *
+ * // NOTE: this package is shared by the Vite console and the Next.js storefront, and only
+ *
+ * <p>`NEXT_PUBLIC_API_URL` first because the Next.js storefront is the one that needs it here;
+ * the console passes `VITE_API_URL`. Neither prefix is filtered, so the two apps can be pointed at
+ * the same backend without the shared package having to know which bundler will read it.
+ */
+function readEnv(key: string): string | undefined {
+  if (typeof process !== 'undefined' && process.env) {
+    return process.env[key];
+  }
+  return (import.meta as unknown as { env?: Record<string, string | undefined> }).env?.[key];
+}
+
 export const API_URL =
-  process.env.NEXT_PUBLIC_API_URL ?? process.env.VITE_API_URL ?? 'http://localhost:8080';
+  readEnv('NEXT_PUBLIC_API_URL') ?? readEnv('VITE_API_URL') ?? 'http://localhost:8080';
 
 export interface RequestOptions extends Omit<RequestInit, 'body'> {
   body?: unknown;

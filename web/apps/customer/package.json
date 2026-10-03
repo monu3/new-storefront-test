@@ -26,10 +26,13 @@
     "zod": "^3.24.1"
   },
   "devDependencies": {
+    "@store-app/config": "workspace:*",
+    "@tailwindcss/postcss": "^4.3.3",
     "@types/node": "^22.10.0",
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",
-    "typescript": "^5.7.2",
-    "@store-app/config": "workspace:*"
+    "postcss": "^8.4.49",
+    "tailwindcss": "^4.3.3",
+    "typescript": "^5.7.2"
   }
 }

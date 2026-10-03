@@ -26,10 +26,45 @@ export interface AuthConfig {
   postLogoutRedirectUri: string;
 }
 
+/**
+ * Reads an environment variable that works in **both** frontends.
+ *
+ * <p>`@store-app/auth` is a linked workspace package shared by the Vite console and the Next.js
+ * storefront, and the two expose configuration differently:
+ *
+ * <ul>
+ *   <li>Next.js provides `process.env`, including `NEXT_PUBLIC_*` at build time.</li>
+ *   <li>Vite provides `import.meta.env` for `VITE_*`, and **does not define `process` in the
+ *       browser at all**.</li>
+ * </ul>
+ *
+ * <p>Referencing `process.env[key]` directly therefore threw `ReferenceError: process is not
+ * defined` in the console, blanking the whole app — and Vite's `define` cannot rescue it, because
+ * that only rewrites <em>static</em> `process.env.NAME` text, not a computed index. Both sources
+ * are tried, with `typeof process` guarding the access so the bare reference is never evaluated in
+ * a browser.
+ *
+ * <p>The Vite branch matters for a second reason: this file lives outside the app root, so it is
+ * served through Vite's `/@fs/` path and is not subject to the app's usual env rewriting.
+ */
+export function readEnv(key: string): string | undefined {
+  // Node / Next.js. `typeof` is safe where a bare reference would throw.
+  if (typeof process !== 'undefined' && process.env) {
+    const fromProcess = process.env[key];
+    if (fromProcess) return fromProcess;
+  }
+
+  // Vite.
+  const viteEnv = (import.meta as unknown as { env?: Record<string, string | undefined> }).env;
+  return viteEnv?.[key];
+}
+
 function env(key: string, fallback: string): string {
-  const value = process.env[key];
+  const value = readEnv(key);
   if (!value) {
-    if (process.env.NODE_ENV === 'production') {
+    // A missing variable is a warning in development and a hard failure in production, where a
+    // silently-defaulted Keycloak URL would point production auth at a development realm.
+    if (readEnv('NODE_ENV') === 'production') {
       throw new Error(`Missing required env var: ${key}`);
     }
     return fallback;

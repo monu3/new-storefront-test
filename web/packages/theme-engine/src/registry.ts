@@ -230,8 +230,25 @@ export const SECTION_DEFINITIONS: Record<SectionType, SectionDefinition> = {
   },
 };
 
-// Fail fast in development if the schema and registry drift apart.
-if (process.env.NODE_ENV !== 'production') {
+/**
+ * Whether this is a development build.
+ *
+ * <p>A guarded read rather than `process.env.NODE_ENV`, because this package is served to the
+ * Vite console where `process` is undefined — and this check runs at **module scope**, so a
+ * throw here blanks the console before it renders. See plan Appendix P.
+ */
+function isDevelopment(): boolean {
+  if (typeof process !== 'undefined' && process.env) {
+    return process.env.NODE_ENV === 'development';
+  }
+  const viteEnv = (import.meta as unknown as { env?: Record<string, string | undefined> }).env;
+  // No explicit NODE_ENV from Vite means a development server, which is when this check matters.
+  return viteEnv?.MODE !== 'production' || viteEnv?.NODE_ENV === 'development';
+}
+
+// Fail fast in development if the schema and registry drift apart. The check is skipped in a
+// production bundle so the throw is tree-shaken out entirely.
+if (isDevelopment()) {
   const schemaTypes = new Set<string>(SECTION_TYPES);
   const registryTypes = new Set<string>(Object.keys(SECTION_DEFINITIONS));
   const missing = [...schemaTypes].filter((t) => !registryTypes.has(t));
