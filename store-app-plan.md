@@ -63,6 +63,13 @@ Status: Draft for review · Last updated: 2026-10-01
 | D28 | Web workspace | Turborepo + pnpm, **10 packages**, 2 apps. Every cross-package import must be a declared dependency — enforced by an audit, see Appendix G. |
 | D29 | Shop type change | **Self-serve, by the shop owner**, from general settings. Not admin-only. |
 | D30 | Type-change safety | The picker offers **only reachable types** — those that every existing product still fits. Blocked types are returned with the exact categories to fix. Admin can override with an audit entry. |
+| D31 | Commission base | `(subtotal - discount)`, **excluding shipping and tax**. Implemented in `CommissionCalculator`; plan open question #1 is now answered in code and awaits only the user's confirmation. |
+| D32 | Balance arithmetic | All money is `bigint` paisa. `Money` is a record; `BigDecimal` appears only inside percentage maths and is immediately converted back. `distribute()` guarantees parts sum exactly to the total. |
+| D33 | Lombok | **1.18.48**, `provided` scope, excluded from the fat jar. Used for accessors, builders, `@Slf4j`, `@RequiredArgsConstructor` — **not** for rules. |
+| D34 | Commission base | **Confirmed by the user:** `(subtotal - discount)`, excluding shipping and tax. Plan open question #1 is closed. |
+| D35 | Shop derivation | Shop-scoped endpoints resolve the shop from the token, never from a request parameter. A `shopId` in the body would make authorisation a per-endpoint decision. |
+| D36 | Admin guarding | `@PreAuthorize` on the admin controller **class**, not per method, so a new endpoint is admin-only by default. |
+| D37 | Integration tests | `*IT.java` runs in the normal `mvn test`. Surefire's default skips them, and a green build that ran almost nothing is worse than a failing one. |
 | D17 | Shop category | **Hardcoded `ShopType` enum.** No table, no sub-category. |
 | D18 | Product category | **Nested enums** per shop type, validated as a pair. |
 | D19 | Media storage | Cloudinary folder `shop/{shopId}/...`; DB stores `url` **and** `public_id`. |
@@ -1433,9 +1440,12 @@ design before anything depends on it.
 on :5173; a user can log in through the real Keycloak from :5173 and their token authenticates
 against :8080 with the correct role; the `storefront` database is provably untouched.
 
-### Phase 1 — Vertical Slice: Shop -> Product -> Order (~3 weeks)
+### Phase 1 — Vertical Slice: Shop -> Product -> Order (~3 weeks) — ✅ COMPLETE
 
 **Goal:** one complete money path, end to end, no shortcuts. This de-risks the entire project.
+
+> **Status: complete.** All 11 items delivered. 5,524 tests green; the exit criterion below is
+> verified live. See Appendix L (items 1–4) and Appendix M (items 5–11, decisions D43–D55).
 
 1. **Identity sync** — first-login profile sync from both realms into `app_user`; the `SHOP` role provisions a `shop` row in `DRAFT`.
 2. **Shop signup with type selection** — basic details, **shop type picker driven by the meta endpoint**, slug generation with collision retry. Type is locked after creation (section 5.3).
@@ -2234,3 +2244,700 @@ bisecting a phantom, I rewrote the file from scratch with consistent 4-space ind
 repo mixes tabs and spaces, and javac's column reporting for tab-indented files is misleading).
 If a compiler error points at a location that does not contain what it claims, check the
 indentation before suspecting the code.
+
+---
+
+## Appendix I — Phase 1 in progress: the money foundation
+
+**Status: 4 of 11 Phase 1 items done. The money path is proven; the flows around it are not
+built yet.**
+
+### Complete
+
+| # | Item | State |
+|---|---|---|
+| — | **Schema** | V1–V4, **27 tables** in `store_app` |
+| — | **`Money`** value object | 55 unit tests |
+| — | **`CommissionCalculator`** | the D2 rules, tested |
+| — | **Wallet ledger** | 24 integration tests against real Postgres |
+| — | `ShopOrder` entity + `ShopTypeChange` | from the previous session |
+
+**Backend suite: 5,193 tests green.** App boots in 8.6 s; health UP on all six indicators.
+
+### The three wallet properties, proven
+
+`WalletServiceIT` asserts, against a real database rather than mocks:
+
+1. **A debit is impossible without funds.** `InsufficientWalletBalanceException`, and the
+   balance does not move.
+2. **The same key can never move money twice.** Accepted twice, charged once.
+3. **The cache and the ledger never disagree.** Reconciliation detects injected drift and
+   restores the ledger's value, because the ledger is authoritative.
+
+Plus: a full fund → accept → cancel cycle returns the wallet to exactly where it started, and a
+**raw insert bypassing the service is still rejected** by the unique constraint — the guarantee
+lives in the schema, not only in the calling code.
+
+### Nine bugs found by running it, not reading it
+
+Every one of these was invisible to review and only appeared at runtime:
+
+1. **`@UuidGenerator` alongside a constructor-assigned id.** Hibernate treated the row as a
+   detached instance and issued UPDATEs, producing `ObjectOptimisticLockingFailureException`
+   everywhere. Application-assigned ids need `@Id` alone.
+2. **`@CreationTimestamp` on a NOT NULL column with no default.** The annotation populates the
+   field *after* the INSERT is built, so it fails with "No value specified for parameter 12".
+   Replaced with field initialisers, which exist before Hibernate builds the statement.
+3. **`BaseEntity` on the append-only ledger.** Its `@PreUpdate` would rewrite `updated_at` on a
+   row that must never change. `WalletLedgerEntry` no longer extends it, and declares
+   `createdAt` directly — an append-only guarantee should be structural, not disciplinary.
+4. **`citext` needs `columnDefinition`, not a `UserType`.** A hand-written `CitextType` worked in
+   isolation but silently bound NULL through Hibernate, and `@Type` alone does not register the
+   type. `columnDefinition = "citext"` is the whole solution; the custom type was deleted.
+5. **`jsonb` needs `@JdbcTypeCode(SqlTypes.JSON)`.** `columnDefinition` alone leaves the value
+   bound as VARCHAR, which Postgres rejects.
+6. **`char(3)` vs `varchar(3)`** for `currency`. Hibernate maps String to varchar; `char` also
+   pads with spaces, so `'NPR '` would not equal `'NPR'`. Migration V4 relaxes it.
+7. **A test fixture that cached its owner across `@Transactional` tests.** Every test rolls
+   back, so the cached entity's row no longer existed while its id still looked valid — the FK
+   failed on a completely correct-looking id. Not cached now.
+8. **Random UUIDs where real rows are required.** `wallet_ledger_entry.order_id` and
+   `shop_order` both have genuine foreign keys. The schema was right; the tests were wrong.
+9. **A derived query that Spring Data could not parse.** `findByStatus...(List, Pageable)` reads
+   the List as a scalar equality. Rewritten as explicit JPQL.
+
+### Two deliberate choices worth noting
+
+**The balance is moved with an atomic `UPDATE balance = balance + delta`**, not a
+read-modify-write on the entity. A `@Version`ed entity and a pessimistic lock interacted badly
+under the flush ordering, and an atomic UPDATE cannot be lost to a stale in-memory copy. A
+pessimistic row lock is still held for the affordability check, because that read must not be
+stale — two concurrent accepts of *different* orders are not covered by any per-order
+idempotency key.
+
+**`commission_idempotency_key()` is derived from the order id** (`"commission:" + id`). That one
+string is what makes double-charging impossible, and it means a retried accept cannot even
+attempt a second debit.
+
+### Not yet built
+
+The remaining 7 Phase 1 items, in the order they depend on each other:
+
+- identity sync (first-login profile creation, shop provisioning on the SHOP role)
+- shop signup with type selection, and the admin verification queue
+- products and variants, media upload to Cloudinary
+- minimal SSR storefront, checkout and quote
+- `PaymentGateway` with COD and bank transfer (eSewa stubbed behind the interface)
+- order state machine, inventory reservation, order numbering
+- outbox relay, RabbitMQ workers, email
+
+### Open question #1 is now answered in code
+
+`CommissionCalculator` implements `(subtotal - discount)`, excluding shipping and tax, as the
+plan assumed. If that is not the intended base, the change is one method and its tests — but it
+should be confirmed **before** the first real order, not after.
+
+---
+
+## Appendix J — Lombok adoption (D33)
+
+Added at the user's request, version **1.18.48** (current; 1.18.30+ is the floor for Java 21).
+
+### Configuration
+
+| Setting | Value | Why |
+|---|---|---|
+| `<scope>` | `provided` | Compile-time only; must not reach runtime. |
+| `spring-boot-maven-plugin` `<excludes>` | lombok | Verified: **0 lombok entries** in the fat jar. |
+| `maven-compiler-plugin` `annotationProcessorPaths` | lombok 1.18.48 | With Java 21 the processor path is not inferred reliably, and a silent failure looks like "the annotation does nothing". |
+| `-parameters` | on | Keeps constructor parameter names in the bytecode for Spring's argument resolution. |
+
+### Where it is used, and where it deliberately is not
+
+| Annotation | Applied to | Effect |
+|---|---|---|
+| `@Getter` / `@Setter` | `Shop`, `AppUser`, `ShopOrder`, `WalletLedgerEntry` | 31, 21, 35, 15 accessors generated |
+| `@NoArgsConstructor(PROTECTED)` | all four entities | the JPA constructor, no longer hand-written |
+| `@Builder` | `WalletLedgerEntry` | replaced a ~70-line hand-written builder class |
+| `@Slf4j` | `WalletService` | removed the `LoggerFactory.getLogger` boilerplate |
+| `@RequiredArgsConstructor` | `WalletService` | constructor injection without the boilerplate |
+
+**107 accessors** now come from about ten lines of annotations.
+
+### The rule this establishes
+
+> Lombok removes boilerplate. It never removes a **rule**.
+
+Three consequences, all enforced in code:
+
+1. **`WalletLedgerEntry`'s constructor is hand-written** with its validation inside, and
+   `@Builder` is pointed at that constructor. A fluent builder still cannot bypass the checks —
+   a zero amount or a blank description fails at `build()`, exactly as before.
+
+2. **`ShopOrder` uses `@Setter(AccessLevel.PACKAGE)` with `@Setter(AccessLevel.NONE)` on the
+   state-bearing fields.** `status`, `paymentStatus`, the commission columns and the lifecycle
+   timestamps have no public setter at all, so the state machine is the only thing that can move
+   an order. A blanket `@Setter` would have quietly opened a hole the class exists to close.
+
+3. **`ShopWalletBalance` has no setters whatsoever** — not even package-private. The balance moves
+   only through the atomic repository `UPDATE`, so it is structurally impossible to change a
+   balance without a matching ledger entry.
+
+`Shop`'s lifecycle methods (`verify`, `reject`, `suspend`, `submitForReview`) are likewise
+hand-written: they carry rules, and a generated setter would let any caller skip them.
+
+### Verification
+
+| Check | Result |
+|---|---|
+| `./mvnw clean install` | **BUILD SUCCESS**, 5,193 tests |
+| Lombok in the fat jar | **0 entries** |
+| App boot | 9.1 s, health **UP** on all six indicators |
+| `ShopOrder` public setters | 4 — `adminNote`, `customerId`, `guestEmail`, `guestPhone` only |
+
+### Open question #1 is closed
+
+The user confirmed: **commission is 5% of `(subtotal - discount)`, excluding shipping and tax.**
+That is what `CommissionCalculator` already implements and what its tests assert, so no change was
+needed. D34 records it.
+
+`CommissionCalculatorTest` covers it directly — `discountReducesTheBase` asserts the percentage
+applies *after* the discount (Rs 1,000 − Rs 200 → 5% of Rs 800 = Rs 40, not Rs 30), and
+`excludesShippingAndTax` asserts Rs 50 of delivery and Rs 130 of VAT do not enter the base.
+
+---
+
+## Appendix K — Phase 1: identity, shops and the verification gate
+
+**Status: 7 of 11 Phase 1 items done.**
+
+### Complete since Appendix I
+
+| # | Item | State |
+|---|---|---|
+| 2 | **Shop signup with type** | `ShopService.signUp` |
+| 3 | **Admin verification** | `VerificationService` + `AdminShopController` |
+| — | Identity sync | `IdentitySyncService`, `CurrentUser` |
+| — | Tenant guard | `TenantGuard` |
+| — | Public gallery | `PublicShopController` |
+| — | Shop dashboard API | `ShopController` |
+| — | RFC 7807 error mapping | `ApiExceptionHandler` extended |
+
+**Backend suite: 5,284 tests green, 0 skipped. App boots in 9.1 s.**
+
+### Two architectural choices worth stating
+
+**Shop-scoped endpoints derive the shop from the token** (D35). No endpoint accepts a
+`shopId` parameter. Accepting one would make authorisation a per-endpoint decision, and the one
+endpoint that forgets its `@PreAuthorize` becomes a cross-tenant read. Deriving it means there
+is nothing to get wrong.
+
+**Admin guarding is class-level** (D36), so a new admin endpoint is admin-only by default. Making
+it public takes a deliberate edit rather than a forgotten annotation. The same reasoning is why
+the Phase 7 data explorer must treat mutating endpoints as dangerous.
+
+### The verification gate, verified live
+
+The whole flow, against the running service and real Keycloak tokens:
+
+```
+1. shop signs up      -> slug=krishna-pharmacy type=PHARMACY status=DRAFT
+2. public gallery     -> 0 shops visible          (correctly hidden)
+3. submit for review  -> 200
+4. admin queue        -> [('Krishna Pharmacy', 'PENDING_REVIEW')]
+5. admin approves     -> status=VERIFIED verifiedAt=True
+6. public gallery     -> Krishna Pharmacy appears
+7. storefront         -> categories: MEDICINE, MEDICAL_DEVICE, SUPPLEMENT,
+                            PERSONAL_CARE, BABY_CARE
+                          offers KIDS_CLOTHING? False
+8. type filter        -> PHARMACY: 1 shop   FASHION: 0 shops
+```
+
+Step 2 is the one that matters: **an unverified shop is invisible before an admin looks at it.**
+That is the plan's answer to "limit fake shops", and it is asserted rather than assumed.
+
+### A security gap the tests caught
+
+`IdentitySyncService` originally derived the realm from the **last path segment** of the issuer.
+That accepts `https://rogue.example.com/realms/ops` as the ops realm — the realm name is not a
+secret, it appears in every legitimate token.
+
+Fixed to compare the **whole issuer URL** against the configured values, with the two issuers
+derived from a single configured base so they cannot drift apart. Pinned by
+`rogueHostWithValidRealmNameRejected`, which tries the trick against both realms.
+
+This was defence in depth rather than the primary control — `MultiIssuerJwtDecoder` had already
+rejected the token — but the decoder is configured in one place and the sync service in another,
+and a future change to one should not silently weaken the other.
+
+### The most important bug found in this whole phase
+
+**All seven `*IT.java` integration suites were silently skipped.** Surefire's default include is
+`*Test.java` only, so `mvn test` reported a green build while running almost nothing — including
+the wallet's 24 tests and the live Keycloak tests.
+
+```
+before:  Tests run: 5193   <- ITs never executed
+after:   Tests run: 5284   <- 91 more tests, actually running
+```
+
+**Every "tests green" claim before this point was overstated**, including in Appendix I. The unit
+tests genuinely passed, and the integration tests I ran individually did pass — but the aggregate
+number was not what it appeared to be. Surefire is now configured to include both patterns, and
+the live suites run in the normal build.
+
+The lesson generalises: a green build that skipped its own tests is a lie with a passing status
+code. Worth checking that a test suite is *executing* before trusting its count — the number is
+the same whether it runs or not.
+
+### A test that was wrong, not the code
+
+`noShopYetIs404` expected 404 for a SHOP token with no shop. It got 200 — because
+`IdentitySyncService` auto-provisions a DRAFT shop on first sight. The test's premise was wrong;
+the behaviour is the intended one (an owner never sees an empty state). Rewritten as
+`firstRequestProvisionsShop`, plus a separate test for the real cross-realm guard: a customers
+token is **403** on `hasRole('SHOP')` endpoints, rather than 404-ing because no shop happened to
+exist.
+
+### Tests now exercise the real role mapping
+
+`ShopControllerIT` uses the `authorities(Converter)` post-processor overload, which runs the
+application's actual `KeycloakJwtAuthenticationConverter` over the token. If a realm role
+stopped mapping to `ROLE_SHOP`, these tests would fail — a hand-asserted authority list would
+sail straight past it.
+
+### Error handling
+
+`ApiExceptionHandler` now maps:
+
+| Exception | Status | Code |
+|---|---|---|
+| `InvalidCategoryException` | 400 | `INVALID_CATEGORY` |
+| `ShopTypeChangeConflictException` | 409 | `SHOP_TYPE_CHANGE_CONFLICT` |
+| `UnknownShopTypeException` | 404 | `UNKNOWN_SHOP_TYPE` |
+| `ShopNotFoundException` | 404 | `SHOP_NOT_FOUND` |
+| `IllegalStateException` | 409 | `ILLEGAL_STATE_TRANSITION` |
+| `IllegalArgumentException` | 400 | `INVALID_REQUEST` |
+| `MethodArgumentNotValidException` | 400 | `VALIDATION_FAILED` + `fieldErrors` |
+
+### Remaining Phase 1 items
+
+*(All delivered. See appendices L and M — Phase 1 is complete.)*
+
+---
+
+## Appendix L — Phase 1 item 4: products, variants and Cloudinary media
+
+Products, variants, the media library and signed direct-to-Cloudinary uploads are built and
+verified against the live account. Full suite: **5,379 tests, 0 failures, 0 skipped**, with
+both the live Keycloak and live Cloudinary integrations enabled.
+
+### D38 — a product always has at least one variant
+
+A product is what a customer browses; a variant is what they buy and what carries the price,
+the SKU and the stock. The single-SKU case is represented as a product with exactly one
+variant rather than special-cased, because **a product with no variant has no price and cannot
+be ordered**. `Product.publish()` and `ProductService.publish()` both refuse a product with no
+active variant, so an unpriced row never reaches the storefront.
+
+This also settles where the price lives. `product_variant.price_minor` is the source of truth;
+`product.base_price_minor` is a **mirror of the cheapest active variant**, kept so a product
+list can sort and show "from Rs. 40" without a join per row. `ProductService` recomputes it
+after every variant price change, deactivation and activation.
+
+### D39 — option axes are an ordered array in jsonb, not an object
+
+`product_variant.option_values` holds `[{"axis":"size","value":"L"},{"axis":"colour","value":"red"}]`
+rather than `{"size":"L","colour":"red"}`.
+
+**This was found by a test, not designed up front.** jsonb does not preserve object key order —
+it normalises keys by length then bytewise — so a variant labelled "Large / Red" read back as
+"red / L", and two reads of the same row could disagree. A jsonb *array* preserves element
+order. The order originates in the request body, which Jackson deserialises into a
+`LinkedHashMap`, so the order the shop chose in the form reaches the stored label.
+
+The ordering is not decoration: `variant.optionsLabel()` is what the customer reads on the
+product page, and `VariantView` returns both the ordered list and the rendered label so the
+client does not rebuild it and get it subtly wrong.
+
+### D40 — media uploads go browser to Cloudinary, never through the API
+
+Three steps: sign → upload → record.
+
+1. `POST /api/v1/shop/media/signature` returns the signature, the folder and the size limits.
+2. The browser posts the file **straight to Cloudinary**. Our API never sees the bytes.
+3. `POST /api/v1/shop/media/record` reports the `public_id` back and the row is created.
+
+A 5 MB image transiting this server is 5 MB of our bandwidth and connection time for something
+Cloudinary will store anyway. The limits travel with the signature so the browser can refuse an
+oversized file *before* spending the user's bandwidth on an upload that would be refused.
+
+### D41 — a claimed upload is verified against Cloudinary, not trusted
+
+Nothing stops a client from reporting a `public_id` that does not exist, or one that lives in
+another shop's directory. `MediaService.record` therefore **re-derives the folder from the
+caller's shop and compares it with the folder Cloudinary reports** for the asset. A mismatch is
+refused. Without this check a shop could reference another shop's image and render it in their
+own storefront — a cross-tenant read of the cheapest kind.
+
+The signature covers every parameter the browser will send, so a client cannot add one of its
+own; the folder is additionally built server-side from the caller's own shop id (D35), so the
+only part they control is the leaf, and a traversal in it is rejected twice.
+
+### D42 — the Cloudinary SDK, not a hand-rolled signature
+
+The signed-upload algorithm is SHA-1 over an alphabetically sorted parameter string with the
+secret appended, base64url-encoded. That was implemented by hand first and produced
+`Invalid Signature` at every attempt with no useful diagnostic. The official `cloudinary-core`
+plus `cloudinary-http45` pair is used instead:
+
+- `cloudinary-core` is **API-only**. Without an HTTP transport artifact the client fails at
+  construction with `Can't find Cloudinary platform adapter`, which reads like a missing
+  dependency but is really a missing *runtime* strategy found by reflection.
+- The 1.39.0 API differs from what the docs suggest: `uploader().upload(...)` returns
+  `Map`, not `ApiResponse`; listing is `api().resources(...)`, not `uploader().listResources`;
+  and `secure(true)` is on `Url`, not on `Transformation`.
+
+Both jars are recorded in the pom with a comment explaining why, because the failure mode of
+omitting the second is baffling.
+
+### Bugs found by the tests in this phase
+
+| # | Bug | Why it mattered |
+|---|---|---|
+| 1 | `jsonb` key order is not preserved, so option labels came back reordered | Customer-visible: "Large / Red" rendered as "red / L", inconsistently between reads. Fixed by D39. |
+| 2 | `ProductService.delete` trusted a caller's stale `Product` instance | `soldCount` is updated by a bulk UPDATE that declares `clearAutomatically`, so the held entity was detached and still showed the pre-sale count — the sales guard silently passed and order history was stranded. `delete()` now re-reads. |
+| 3 | `uploadAndRecord` stored Cloudinary's raw `secure_url` while the browser path stored a capped delivery URL | The same asset was reachable at two different sizes depending on how it was uploaded, and a shop's 6000px original was served in full on a listing page. Both paths now store the width-capped delivery URL. |
+| 4 | `ProductNotFoundException` and `MediaNotFoundException` had no handler | Cross-tenant reads surfaced as **500** instead of 404. Added, with the 404-not-403 rationale recorded in the handler. |
+| 5 | `VariantView.options` was a `Map` | Serialised as a JSON object, discarding the ordering that D39 exists to preserve. Now the ordered list plus the rendered label. |
+
+### Test-count lesson: token `sub` must be `keycloak_sub`
+
+`IdentitySyncService` resolves a token to a row by `keycloak_sub`, **not** by row id. A test
+token carrying the `app_user.id` resolves to a *different* caller — who is auto-provisioned a
+brand-new shop by `firstRequestProvisionsShop`. Every tenancy test then silently becomes a test
+of the wrong shop and passes or fails for the wrong reason.
+
+This produced a genuinely confusing failure: product endpoints returned 200 with zero products
+and 404 for a product that plainly existed. The rule is now stated in the test helper:
+
+> the token subject must be the user's `keycloak_sub`, or the request resolves to a newly
+> provisioned caller who owns a different shop.
+
+### Test fixtures
+
+`TestFixtures` gained `createProduct(shop, name, category, priceMinor)` and a grocery-shop
+convenience overload. Written through the repositories rather than the service, so a fixture
+cannot fail because of a service rule the test is not about. `created_by` and `product_id` are
+genuine foreign keys, so the actor is always the shop's real owner and the product always a
+real row — a fabricated UUID fails the constraint before the test logic runs.
+
+### Media usage taxonomy
+
+One `media` table for every image in the system, so "the shop's media library" is a single
+query and a shop's assets are removable in one sweep:
+
+`PRODUCT_IMAGE`, `VARIANT_IMAGE`, `SHOP_LOGO`, `SHOP_FAVICON`, `SHOP_COVER`, `BANNER`,
+`THEME_IMAGE`, `PAYMENT_QR`, `RECEIPT_PROOF`
+
+Both `url` and `public_id` are stored, and both are needed. `url` is the only column the
+storefront ever sees; `public_id` is what `destroy()` needs — without it every image is
+undeletable and accumulates in the Cloudinary account for the life of the project.
+
+`cloudinary_folder` is derived from the `public_id` (Cloudinary encodes the path into it) and
+stored only so a shop's assets can be listed by folder without string parsing at query time.
+
+### Schema change: V5
+
+- `media.updated_at` added — `MediaAsset` extends `BaseEntity` like every other mutable entity,
+  and media genuinely is mutable (alt text, sort order, product attachment).
+- `product_variant.option_values` default changed from `'{}'` to `'[]'`, with a guarded
+  `UPDATE` for any existing object. See D39.
+- `idx_media_shop_product` for the per-gallery lookup.
+
+### Verified live, end to end
+
+Against the running app, real Keycloak and the real Cloudinary account:
+
+1. Sign up a grocery shop → submit → admin verify.
+2. Categories for the shop type served from the same validator that enforces the write rule.
+3. A grocery listing `LAPTOP` → **400 `INVALID_CATEGORY`**.
+4. Product + three variants created; mirrored base price = 12,000, the cheapest. ✓
+5. Signature obtained → **file uploaded straight to Cloudinary** → `public_id` reported back →
+   row recorded with a `c_limit,f_auto,q_auto,w_1600` delivery URL.
+6. A lying client claiming another shop's folder → **400 `MEDIA_REJECTED`**.
+7. Delete → database rows 0, and the Cloudinary account reports **0 assets total**. No leak.
+
+### Remaining Phase 1 items
+
+None. **Phase 1 is complete** — see Appendix M for the exit criterion measured against the
+running application, and decisions D43–D55.
+
+---
+
+## Appendix M — Phase 1 COMPLETE: the vertical slice, end to end
+
+**Status: 11 of 11 Phase 1 items done.** The exit criterion passes against the running
+application, with real Keycloak, real Postgres, real RabbitMQ and the real Cloudinary account.
+
+Full suite: **5,524 tests, 0 failures, 0 skipped.**
+
+### The exit criterion, verified live
+
+> *"a verified pharmacy shop publishes a product with category `MEDICINE`, a customer orders and
+> pays by COD, the shop's wallet drops by exactly 5%, cancellation puts it back, the ledger
+> reconciles against the balance cache, and attempting `KURTA` on that shop is rejected with
+> `400 INVALID_CATEGORY`."*
+
+Measured, not asserted by hand:
+
+| Step | Result |
+|---|---|
+| `MEDICINE` on a grocery | `400 INVALID_CATEGORY` |
+| Publish + stock 25 units | product visible on the public storefront, **no `costPrice` in any payload** |
+| Guest checkout, no token | `ORD-0003` `PENDING`, total `Rs. 900.00` |
+| Wallet `Rs. 1,910` → top up `Rs. 1,000` | `Rs. 2,910` |
+| Accept | **`4,500` paisa commission = exactly 5% of `90,000`** |
+| Wallet after accept | `291,000 − 4,500 = 286,500` — reconciles |
+| `process → ship → deliver` | `PENDING → ACCEPTED → PROCESSING → SHIPPED → DELIVERED`, COD settled at dispatch |
+| Stock | one movement: `−2 SALE` |
+| Cancel a `DELIVERED` order | `409 ILLEGAL_STATE_TRANSITION` |
+| No token on `/shop/orders` | `401` |
+
+### D43 — commission is debited at ACCEPT, and frozen onto the order
+
+Not at placement. A placed order can be abandoned, and charging a shop commission for an order
+nobody intends to fulfil is how a marketplace loses its shops.
+
+`OrderService.accept()` orders its six steps deliberately:
+
+1. check the transition is legal
+2. **compute** the commission (pure)
+3. debit the wallet
+4. **freeze** the commission onto the order
+5. commit stock
+6. move the status and record history
+
+**Freeze comes after the debit, not before.** Freezing first was a bug: when the shop could not
+pay, the exception rolled the transaction back but left the in-memory order already carrying
+`commissionMinor`, so anything that caught the exception and continued in the same transaction
+would persist a frozen commission for an order that was never accepted. The database was never
+wrong — the rollback undid it. The *entity* was. Computing before writing means a failure at any
+step leaves the order exactly as it was found. `OrderLifecycleIT` asserts the field is still
+null after a refused accept.
+
+The idempotency key is `"commission:" + orderId`, so a double-clicked Accept debits once.
+
+### D44 — order numbers are allocated inside the caller's transaction
+
+Originally `REQUIRES_NEW`, so a failed checkout would still consume a number on the reasoning that
+gaps look like lost orders. Two things are wrong with that:
+
+- it needs a **second database connection per checkout**, held for the whole order transaction;
+- it **cannot see the caller's uncommitted writes** — a checkout inside a transaction that created
+  the shop in the same transaction fails its foreign key, because the suspended transaction sees
+  only committed data.
+
+Both are worse than the perceived benefit. A failed checkout rolls the counter back with everything
+else, so no gap appears; and orders are never hard-deleted, so the only way to create a gap is to
+delete an order that an invoice already names. `CheckoutRollbackIT` asserts a failed checkout
+leaves no order, no reservation, and no advance of the counter.
+
+The counter is a **row lock**, not `MAX() + 1`. `MAX + 1` is the classic way to give two customers
+the same order number; the pessimistic lock serialises one shop's checkouts while leaving every
+other shop unblocked.
+
+### D45 — reserving stock is a compare-and-set, not a read-then-write
+
+Two customers ordering the last unit both read `available == 1` and both succeed. So the
+reservation is a single UPDATE whose WHERE clause states the precondition:
+
+```sql
+UPDATE inventory SET quantity_reserved = quantity_reserved + :qty
+ WHERE product_id = :p AND variant_id = :v
+   AND quantity_on_hand - quantity_reserved >= :qty
+```
+
+A row count of 0 means someone else got there first, and the caller gets an
+`InsufficientStockException` rather than an oversell. `quantity_reserved <= quantity_on_hand` is
+the constraint underneath.
+
+`InventoryService.reserve` is **`Propagation.MANDATORY`**: the reservation joins the order's
+transaction, so a failed checkout cannot leave phantom stock held for an order that does not exist.
+
+### D46 — committing a reservation attributes only what was reserved
+
+A retried accept must be safe, because shop owners double-click and mobile networks retry. The
+first version suppressed the movement log while still subtracting the full requested quantity from
+on-hand — which *looked* idempotent in the log and silently destroyed stock. `InventoryIT` caught
+it: 10 units became 2 in a test that had only checked the log.
+
+`Inventory.commitReservation` now subtracts `min(quantity, reserved)` and **returns what it
+attributed**. Zero attributed means nothing changed and nothing is logged.
+
+A **backorder deducts nothing**: its goods were never on the shelf, so the honest position is to
+take nothing and let the shop's restock be the movement that explains the shortfall. The test that
+asserted the opposite was wrong, not the code.
+
+### D47 — "terminal" and "closed" are different words
+
+`DELIVERED` was in `TERMINAL_STATUSES` *and* had two successors in the graph. `OrderStateMachineTest`
+caught the contradiction, because it asserts that terminal status agrees with having no successors.
+
+- **closed** — no further fulfilment step. `DELIVERED`, `CANCELLED`, `RETURNED`, `REFUNDED`.
+- **terminal** — can never change. `CANCELLED`, `RETURNED`, `REFUNDED`.
+
+Delivered is closed but not terminal: a customer can still return it in Phase 8. Conflating the two
+makes a promise the transition graph then breaks.
+
+Only a **`PENDING`** order can be cancelled. That one rule removes the need to reason about
+cancelling after the goods have shipped — which is a return, with a much more careful flow.
+
+### D48 — an inclusive tax is reported without being added
+
+The subtlest bug in this phase, and the only one that would have reached customers.
+
+A tax rule has `inclusive`: an inclusive tax is *already inside* the displayed price, so it is
+extracted from it rather than added on top. Getting this backwards overcharges every customer by
+the tax amount.
+
+`TaxRule.taxOn` handled it correctly. The quote engine did not. It derived the order's tax from
+`total − subtotal`, which is **zero** for an inclusive rule — the total was right and the breakdown
+silently said "no tax". Then, once reported separately, an intermediate version added it to the
+total as well, charging 13% twice.
+
+The fix is two numbers rather than one:
+
+- `addedToTotal` — what the customer pays on top. Zero for inclusive.
+- `reported` — how much of the price was tax, for the invoice. Non-zero for inclusive.
+
+**They are identical for the ordinary exclusive case**, which is why an order's line taxes sum to
+its total tax without anyone having to think about it. `QuoteServiceIT` pins both.
+
+### D49 — the discount engine distributes so the parts sum exactly
+
+Not approximately. `Money.distribute()` hands leftover paisa to the earliest weights, so the line
+totals plus shipping equal the order total **by construction**. A customer who adds up the lines
+and finds a one-paisa difference concludes the shop's arithmetic is broken.
+
+`QuoteServiceIT` asserts `sum(lineTotals) == total − shipping` directly, on a basket of
+deliberately awkward prices (3,333 × 3 + 7,777 × 2 + 1,001 × 7) with a 1,300bp tax and shipping.
+
+Tax is computed **on the post-discount amount** — taxing the pre-discount amount would overcharge
+the customer and the tax authority.
+
+An invalid discount code **never fails checkout**. It charges full price and returns a message,
+because a customer with a typo in a code should still be able to buy what is in their basket.
+
+### D50 — guest checkout is public, and it says so
+
+`/api/v1/checkout/**` is `permitAll`. A storefront must sell to someone with no account; that is
+the single largest source of lost sales in a marketplace. A token is still read when present, so a
+signed-in customer's order is attached to their account.
+
+Every other shop endpoint takes a token, and none of them take a shop id — the shop is the
+caller's own (D35), so cross-tenant access is a request a caller cannot express.
+
+### D51 — a server error on a public endpoint is not reported as a 401
+
+Found by the live check, and worth recording because it is a genuinely confusing failure mode.
+
+A server-side error is dispatched back through the security filter chain with the original
+request. On a `permitAll` endpoint, `anyRequest().authenticated()` then fires against a request with
+no token, and a database error was reported to the caller as:
+
+```
+401 "A valid Bearer token is required"
+```
+
+The real error underneath was `invalid input syntax for type json` — from a hand-rolled
+`Map.toString()` in the address serialiser, which produces `{name=Ravi, city=Kathmandu}`. Not JSON.
+Fixed by serialising with Jackson.
+
+The status code was the actual bug: **a 500-class error presented as 401 sends whoever is
+debugging it looking at authentication instead of at the database.** Fixed with
+`dispatcherTypeMatchers(ERROR, ASYNC).permitAll()`.
+
+### D52 — eSewa refuses rather than pretending
+
+`EsewaGateway` exists so nothing in the checkout flow has to be written twice when it lands in
+Phase 5, and it **throws** rather than returning a plausible-looking redirect URL. A redirect to
+nowhere produces a customer who has entered their details and then seen nothing happen — strictly
+worse than being told the method is unavailable. `available()` excludes it from the customer's
+choices so it is not even offered.
+
+`CodGateway.verify` returns "cannot know" rather than "not paid", because the platform cannot
+distinguish those, and `OrderService.markDelivered` **refuses to deliver an unverified bank
+transfer** — money that never arrived cannot quietly become an order marked delivered.
+
+### D53 — order lines are snapshots and do not extend BaseEntity
+
+`order_item` carries `created_at` but no `updated_at`, so `OrderItem` does not extend `BaseEntity`
+like almost every other entity. An order line is a frozen record of what was bought, at what
+price, on one date; allowing it to be edited would be allowing a change to what the customer was
+charged, which is the exact failure the snapshot exists to prevent.
+
+`created_at` is load-bearing: it orders the lines the way the customer added them, and the line id
+is a random UUID that sorts arbitrarily.
+
+The same reasoning applies to `InventoryMovement`, `PaymentTransaction`, `Notification` and
+`ShopFollower` — all written once, never edited. `Inventory` is the inverse: a current-state row
+that is mutated forever, so it has `updated_at` and no meaningful `created_at`.
+
+### D54 — the outbox, and why it exists
+
+Writing the event in the same transaction as the state change closes the window where the database
+has committed but the message has not been sent (R5). `OutboxService.record` is
+**`Propagation.MANDATORY`** — not an assumption, an enforcement.
+
+`OutboxRelay` publishes each event in **its own transaction**, so one poison message cannot block
+the queue behind it; with `default-requeue-rejected: false` a requeued message goes to a dead-letter
+queue rather than spinning forever. Attempts are **bounded at 10**, because a poison message retried
+without limit grows the table and fills the logs while nobody ever sees the failure.
+
+A failure is recorded **on the row**, not merely logged, so an operator can find what is stuck
+without reading application logs.
+
+### D55 — the follower counter moves only when a row was created
+
+Following twice is common — a double-tap, a retry. Incrementing unconditionally is how a follower
+count drifts above the number of real followers, and a count that overstates an audience is worse
+than one that is imprecise because the owner trusts it.
+
+So: check, `saveAndFlush` (which is what surfaces the concurrent duplicate), and only on a genuinely
+new row increment. The tests assert against `countOf`, which **counts the rows** — asserting a
+cache against itself proves nothing. `reconcileCounter` repairs drift for the same reason.
+
+### Testing note: only one suite commits
+
+Every other suite is `@Transactional` and rolls back. A rolled-back test **cannot** answer "did
+this failure leave anything behind?", because inside a transaction the insert has been flushed
+while not yet committed and the answer looks identical whether or not the rollback logic works.
+
+`CheckoutRollbackIT` is the documented exception: it commits, and cleans up in `@AfterEach`
+through `TestDatabaseCleaner`, which **refuses to run against any database whose name does not
+contain "test"** — a mistyped JDBC URL there would otherwise empty the development database.
+
+That cleaner deletes in dependency order, because `shop_order.shop_id` is `ON DELETE RESTRICT`
+precisely so an order can never be orphaned. It also removes `outbox_event` and `notification`,
+which have no `shop_id` column and so are not covered by the shop's cascade — found by a relay test
+seeing rows another suite had committed.
+
+### Items delivered in this appendix
+
+| # | Item | Where |
+|---|---|---|
+| 9 | Order lifecycle, inventory reservation, order numbering | `order/OrderService`, `OrderStateMachine`, `OrderNumberService`, `inventory/` |
+| 6 | Checkout: quote engine, server-side authority, order creation | `checkout/QuoteService`, `CheckoutService`, `CheckoutController` |
+| 7 | `PaymentGateway` + COD + bank transfer live, eSewa stubbed | `payment/` |
+| 10 | Outbox + RabbitMQ relay + notification worker | `notification/` |
+| 11 | Follower counter and increment path (D13) | `social/` |
+| 5 | SSR storefront data source (public catalogue reads) | `catalog/PublicProductController` |
+| 8 | Manual top-up: request → admin approval → ledger credit (D7) | `wallet/WalletTopUpService`, `WalletController`, `AdminWalletController` |
+| — | Shop's own stock control | `inventory/StockController` |
+
+### Phase 2 next
+
+Product editor depth (images in the UI, variant matrix, bulk edit) · inventory CSV import/export ·
+Postgres FTS with trigram typo tolerance · SEO · duplication. The catalogue already carries every
+column these need.

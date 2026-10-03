@@ -67,6 +67,12 @@ spring:
 # Application settings
 # ==============================================================================
 store:
+  # Outbox relay (R5). Set enabled=false to run without RabbitMQ: the order flow still works and
+  # events accumulate unpublished, which is the designed behaviour rather than a failure.
+  outbox:
+    enabled: true
+    poll-interval-ms: 2000
+    batch-size: 50
   keycloak:
     # VERIFIED live 2026-10-01. Both realms return a valid OpenID configuration
     # document and support PKCE S256.

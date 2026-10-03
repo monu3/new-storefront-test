@@ -21,6 +21,9 @@
 		<java.version>21</java.version>
 		<springdoc.version>2.9.1</springdoc.version>
 		<openpdf.version>2.0.3</openpdf.version>
+		<!-- 1.18.30+ is required for Java 21; 1.18.48 is current. -->
+		<lombok.version>1.18.48</lombok.version>
+		<cloudinary.version>1.39.0</cloudinary.version>
 	</properties>
 
 	<dependencies>
@@ -107,6 +110,43 @@
 			<version>${openpdf.version}</version>
 		</dependency>
 
+		<!-- ============ media (D19) ============ -->
+		<!-- The official SDK rather than a hand-rolled signed-upload implementation.
+		     Cloudinary's signature algorithm is SHA-1 over an alphabetically sorted
+		     parameter string with the secret appended, base64url-encoded; getting that
+		     subtly wrong produces "Invalid Signature" at runtime with no useful
+		     diagnostic. The SDK also gives delivery-URL transformations, which the
+		     storefront needs for responsive images. -->
+		<dependency>
+			<groupId>com.cloudinary</groupId>
+			<artifactId>cloudinary-core</artifactId>
+			<version>${cloudinary.version}</version>
+		</dependency>
+		<!-- The HTTP transport. cloudinary-core is API-only: without this the client
+		     fails at construction with "Can't find Cloudinary platform adapter",
+		     which reads like a missing dependency but is really a missing
+		     *runtime* strategy discovered by reflection. -->
+		<dependency>
+			<groupId>com.cloudinary</groupId>
+			<artifactId>cloudinary-http45</artifactId>
+			<version>${cloudinary.version}</version>
+		</dependency>
+		<!-- Binds the JSON payload of Cloudinary's upload response -->
+		<dependency>
+			<groupId>com.google.code.gson</groupId>
+			<artifactId>gson</artifactId>
+		</dependency>
+
+		<!-- ============ boilerplate reduction ============ -->
+		<!-- Not optional: the entities here carry a lot of accessors, and hand-written
+		     getters are the bulk of the noise Lombok removes. Scope is provided, not
+		     required, so opting a class out is always possible. -->
+		<dependency>
+			<groupId>org.projectlombok</groupId>
+			<artifactId>lombok</artifactId>
+			<scope>provided</scope>
+		</dependency>
+
 		<!-- ============ test ============ -->
 		<dependency>
 			<groupId>org.springframework.boot</groupId>
@@ -136,6 +176,51 @@
 			<plugin>
 				<groupId>org.springframework.boot</groupId>
 				<artifactId>spring-boot-maven-plugin</artifactId>
+				<configuration>
+					<excludes>
+						<!-- Lombok must not be packaged into the fat jar. Excluding it
+						     explicitly keeps the artifact ~1.4 MB smaller and avoids
+						     shipping a compile-time-only library at runtime. -->
+						<exclude>
+							<groupId>org.projectlombok</groupId>
+							<artifactId>lombok</artifactId>
+						</exclude>
+					</excludes>
+				</configuration>
+			</plugin>
+			<plugin>
+				<groupId>org.apache.maven.plugins</groupId>
+				<artifactId>maven-surefire-plugin</artifactId>
+				<configuration>
+					<!-- Surefire's default is *Test.java only, so every *IT.java suite was
+					     being silently skipped. A green build that ran almost nothing is
+					     worse than a failing one, because it reports safety that does not
+					     exist. Both patterns are included, and ITs run in the normal build
+					     because they need only the local Postgres, not a container. -->
+					<includes>
+						<include>**/*Test.java</include>
+						<include>**/*IT.java</include>
+					</includes>
+				</configuration>
+			</plugin>
+			<plugin>
+				<groupId>org.apache.maven.plugins</groupId>
+				<artifactId>maven-compiler-plugin</artifactId>
+				<configuration>
+					<!-- Declared here rather than relying on the classpath: with Java 21
+					     the annotation processor path is not inferred reliably, and a
+					     silent Lombok failure looks like "the annotation does nothing". -->
+					<annotationProcessorPaths>
+						<path>
+							<groupId>org.projectlombok</groupId>
+							<artifactId>lombok</artifactId>
+							<version>${lombok.version}</version>
+						</path>
+					</annotationProcessorPaths>
+					<compilerArgs>
+						<arg>-parameters</arg>
+					</compilerArgs>
+				</configuration>
 			</plugin>
 		</plugins>
 	</build>

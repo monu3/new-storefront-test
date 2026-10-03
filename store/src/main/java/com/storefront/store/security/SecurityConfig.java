@@ -24,6 +24,7 @@ import org.springframework.security.oauth2.jwt.NimbusJwtDecoder;
 import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationToken;
 import org.springframework.security.web.SecurityFilterChain;
 
+import jakarta.servlet.DispatcherType;
 import jakarta.servlet.http.HttpServletResponse;
 
 /**
@@ -154,6 +155,41 @@ public class SecurityConfig {
 								// authenticity is proven by verifying the
 								// transaction server-to-server.
 								"/api/v1/payments/*/callback")
+						.permitAll()
+						// ---- guest checkout ----
+						// Public, and deliberately so. A storefront must sell to someone
+						// with no account: that is the single largest source of lost sales
+						// in a marketplace, and requiring registration before a
+						// customer can see a total is a good way to have it.
+						//
+						// A token is still read when one is present (optional auth), so
+						// a signed-in customer's order is attached to their account and
+						// appears in their history. Without one it is a guest order
+						// identified by email, which is why guest_email exists on the
+						// order at all.
+						//
+						// Nothing here reads tenant data: a quote prices a public
+						// catalogue, and placing an order creates rows for a shop the
+						// caller already identified by slug.
+						//
+						// Path-wide rather than per-method. CheckoutController
+						// exposes only GET (quote, methods, shops) and POST (place
+						// an order), and both are the guest flow; a DELETE or PUT
+						// under /checkout would be a new feature that has to make
+						// its own decision here. Scoping per method is not
+						// possible in the lambda DSL anyway — requestMatchers()
+						// returns a RequestMatcher, not a builder.
+						.requestMatchers("/api/v1/checkout/**")
+						.permitAll()
+						// A server-side error is dispatched back through the filter chain with the
+						// original request. On a public endpoint that means anyRequest() fires
+						// against a request with no token, and a 500 is reported to the caller as a
+						// 401 "a valid Bearer token is required" — which is not just wrong, it
+						// sends whoever is debugging it looking at authentication.
+						//
+						// Found by a hand-rolled Map.toString() producing invalid JSON: the database
+						// error was real and correct, and the status code hid it completely.
+						.dispatcherTypeMatchers(DispatcherType.ERROR, DispatcherType.ASYNC)
 						.permitAll()
 						// ---- everything else requires a valid token ----
 						.anyRequest().authenticated())
