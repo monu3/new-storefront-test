@@ -36,6 +36,13 @@ spring:
     username: ${RABBITMQ_USER:monu}
     # password omitted for the same reason as the datasource password above.
 
+store:
+  themes:
+    # The template seeder publishes starter templates on boot. Off here: tests assert on the
+    # marketplace contents, and a seeder running on the way into the context would decide what
+    # those contents are.
+    seed: false
+
 logging:
   level:
     root: WARN

@@ -95,20 +95,55 @@ export const themeTokensSchema = z.object({
 
 export type ThemeTokens = z.infer<typeof themeTokensSchema>;
 
+/**
+ * A navigation link.
+ *
+ * <p>Site-relative, an absolute `https` URL, or a same-page fragment.
+ *
+ * <p><b>The fragment case was missing and broke every storefront.</b> The server's
+ * `ThemeValidator.isSafeHref` has always accepted `#`, and every shipped default theme uses
+ * `#products` for its hero call-to-action — but this schema only allowed `/` and `https://`.
+ * So a theme the server had validated rendered as an <em>empty page</em>: `parseTheme` rejected
+ * the whole document, returned an empty theme, and the homepage showed nothing at all.
+ *
+ * <p>That is the worst possible failure: no error, no partial render, just a blank storefront.
+ * The lesson is that the two validators must agree, and that disagreement has to fail loudly
+ * rather than silently — see `ThemeRenderer`, which now reports issues and renders a fallback.
+ */
 export const navItemSchema = z.object({
   label: z.string().trim().min(1).max(60),
   href: z
     .string()
     .trim()
-    .refine((h) => h.startsWith('/') || h.startsWith('https://'), {
-      message: 'Links must be site-relative or absolute https',
+    .refine(
+      (h) =>
+        h.startsWith('/') ||
+        h.startsWith('https://') ||
+        (h.startsWith('#') && h.length > 1),
+      {
+        message:
+          'Links must be site-relative, an absolute https URL, or a same-page fragment like #products',
+      },
+    )
+    // Protocol-relative "//evil.com" leaves the site, so it is not a site-relative path even
+    // though it starts with a slash. Matches ThemeValidator.isSafeHref.
+    .refine((h) => !(h.startsWith('//') || h.startsWith('/\\')), {
+      message: 'Protocol-relative links leave the site',
     }),
 });
 
-export const themeConfigSchema = z.object({
-  schemaVersion: z.number().int().positive().default(THEME_SCHEMA_VERSION),
-  tokens: themeTokensSchema.default({}),
-  sections: z.array(sectionSchema).default([]),
+/**
+ * The whole document.
+ *
+ * <p>Section ids are checked for uniqueness here as well as on the server. A duplicate id makes
+ * the editor's "select this section" ambiguous and renders the section twice, which is the kind of
+ * thing that is obvious the moment it happens and invisible the moment it is fixed by hand.
+ */
+export const themeConfigSchema = z
+  .object({
+    schemaVersion: z.number().int().positive().default(THEME_SCHEMA_VERSION),
+    tokens: themeTokensSchema.default({}),
+    sections: z.array(sectionSchema).default([]),
   nav: z.object({ menu: z.array(navItemSchema).default([]) }).default({ menu: [] }),
   footer: z
     .object({
@@ -117,8 +152,15 @@ export const themeConfigSchema = z.object({
       showPaymentBadges: z.boolean().optional(),
       showSocial: z.boolean().optional(),
     })
-    .default({}),
-});
+      .default({}),
+  })
+  .refine(
+    (t) => new Set(t.sections.map((s) => s.id)).size === t.sections.length,
+    {
+      message: 'Two sections share an id. Ids must be unique — the editor uses them to select a section.',
+      path: ['sections'],
+    },
+  );
 
 export type ThemeConfig = z.infer<typeof themeConfigSchema>;
 

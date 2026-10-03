@@ -256,6 +256,44 @@ public class ApiExceptionHandler {
 		return problem;
 	}
 
+	/**
+	 * A theme document that fails validation.
+	 *
+	 * <p>400 with <b>every</b> problem in {@code issues}, not just the first. A shop owner fixing a
+	 * theme through a form needs to see all of it at once; a validator that stops at the first
+	 * failure turns five corrections into five round trips.
+	 */
+	@ExceptionHandler(com.storefront.store.theme.ThemeValidationException.class)
+	public ProblemDetail handleThemeValidation(
+			com.storefront.store.theme.ThemeValidationException ex, HttpServletRequest request) {
+
+		var problem = ProblemDetail.forStatusAndDetail(HttpStatus.BAD_REQUEST, ex.getMessage());
+		problem.setTitle("The theme is not valid");
+		problem.setProperty("code", "INVALID_THEME");
+		problem.setProperty("issues", ex.issues());
+		problem.setInstance(java.net.URI.create(request.getRequestURI()));
+		return problem;
+	}
+
+	/**
+	 * A template, theme or asset that does not exist — or belongs to another shop.
+	 *
+	 * <p>404 for all three cases deliberately. A 403 on someone else's theme would confirm the
+	 * id is real, turning these endpoints into an existence oracle across tenants.
+	 */
+	@ExceptionHandler({
+			com.storefront.store.theme.ThemeService.TemplateNotFoundException.class,
+			com.storefront.store.theme.ThemeService.ThemeNotFoundException.class,
+			com.storefront.store.theme.ThemeService.AssetNotFoundException.class })
+	public ProblemDetail handleThemeNotFound(RuntimeException ex, HttpServletRequest request) {
+
+		var problem = ProblemDetail.forStatusAndDetail(HttpStatus.NOT_FOUND, ex.getMessage());
+		problem.setTitle("Not found");
+		problem.setProperty("code", "THEME_NOT_FOUND");
+		problem.setInstance(java.net.URI.create(request.getRequestURI()));
+		return problem;
+	}
+
 	/** A state change that the current status does not allow. */
 	@ExceptionHandler(IllegalStateException.class)
 	public ProblemDetail handleIllegalState(IllegalStateException ex, HttpServletRequest request) {

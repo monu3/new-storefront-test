@@ -25,8 +25,19 @@ async function getShops(): Promise<
       next: { revalidate: 300, tags: ['shops'] },
     });
     if (!res.ok) return [];
-    return await res.json();
+
+    // The endpoint returns a paged envelope ({shops: [...], size, ...}), not a bare array.
+    // Assuming a bare array produced `shops.map is not a function` and a 500 on the home page —
+    // the one URL every visitor lands on. Unwrapped defensively so a future envelope change
+    // degrades to an empty gallery rather than a stack trace.
+    const body = (await res.json()) as
+      | Array<{ slug: string; name: string; shopType: string; logoUrl?: string }>
+      | { shops?: Array<{ slug: string; name: string; shopType: string; logoUrl?: string }> };
+
+    return Array.isArray(body) ? body : (body.shops ?? []);
   } catch {
+    // A gallery must not 500 because the API is briefly down; an empty state is more useful than
+    // an error page a visitor cannot act on.
     return [];
   }
 }

@@ -1478,11 +1478,15 @@ Product editor (images via the media table, variants matrix, bulk edit) · produ
 
 ---
 
-### Phase 3 — Theme Engine v1 (~3 weeks)
+### Phase 3 — Theme Engine v1 (~3 weeks) — ✅ COMPLETE
 
 Section registry (~15 core sections first) · zod theme schema, versioned · `theme_template` marketplace with `shop_type` tagging and admin CRUD · shop theme editor with live preview · token system mapping to shadcn CSS vars · hero/header-page/banner/footer assets · default templates per shop type.
 
 **Exit:** an admin publishes a pharmacy template, a pharmacy shop installs it, customizes sections and tokens, publishes, and the SSR storefront renders it — visually identical to the editor preview.
+
+> **Status: complete.** 5,679 backend tests green; all 10 frontend packages typecheck and both apps
+> build. Exit criterion verified live end to end. See Appendix O (decisions D67–D74, and the
+> validator-drift bug that rendered a blank storefront).
 
 ---
 
@@ -3152,3 +3156,160 @@ Worth remembering for any future edit to V7.
 ### Still Phase 3
 
 Theme engine: section registry, zod schema, template marketplace, live preview, token system.
+
+---
+
+## Appendix O — Phase 3 COMPLETE: the theme engine
+
+**Status: Phase 3 complete.** Backend **5,679 tests green, 0 skipped**. Frontend: all 10 packages
+typecheck, both apps build.
+
+Exit criterion — *"an admin publishes a pharmacy template, a pharmacy shop installs it, customises
+sections and tokens, publishes, and the SSR storefront renders it — visually identical to the editor
+preview"* — verified live.
+
+### What was built
+
+**Backend** (`com.storefront.store.theme`) — migration V8 (`theme_template`, `shop_theme`,
+`theme_asset`), `SectionType`, `ThemeValidator`, `DefaultTemplates`, three entities, three
+repositories, `ThemeService`, `ThemeTemplateSeeder`, and three controllers (admin marketplace, shop
+editor, public storefront payload).
+
+**Frontend** (`packages/theme-engine`) — `resolve.ts` (data resolution, no JSX), `sections.tsx` (24
+components), `render.tsx` (the renderer), plus `packages/api-client/src/theme.ts` and the console
+editor at `apps/console/src/pages/shop-theme.tsx`.
+
+### D67 — the two validators are halves of one contract, and a test keeps them in step
+
+`packages/theme-engine/src/schema.ts` (zod) and `ThemeValidator.java` are the same rules in two
+languages, because the browser cannot be trusted to have validated a template and the server
+cannot reach into the storefront's module graph.
+
+They **drifted**, and it cost a blank storefront. See the bug below. `SectionRegistrySyncIT` now
+reads the TypeScript file and asserts the section-type sets are identical. A test that reads a
+source file from another repository is unusual and earns its place: the failure it catches is
+silent on both sides. **Verified that it can actually fail** — adding a probe type to the Java enum
+makes it fail and names the offending type.
+
+### D68 — the storefront must never render blank, and never silently
+
+`parseTheme` degrading to an empty theme is right for a parser and wrong for a renderer, and the
+two have to be separated. A theme that does not validate now:
+
+- renders its **valid** parts,
+- shows a notice naming the problems,
+- falls back to a shop-name block when nothing parsed,
+- and logs to `console.error` on the server regardless.
+
+Before this, a validation failure produced an empty `<div>`: no error, no partial render, no
+trace. The renderer owns the failure; the parser only owns the parse.
+
+### D69 — `#fragment` nav links, and the bug they caused
+
+The server's `isSafeHref` accepted `#`, and **every shipped default template uses `#products`** for
+its hero call-to-action. The zod `navItemSchema` allowed only `/` and `https://`.
+
+So a theme the server had validated parsed to an **empty theme**, and the storefront rendered
+nothing. Found by fetching the rendered HTML and finding `<main>` eleven bytes long.
+
+Aligned the schema to the server (fragments allowed; protocol-relative rejected), added the
+missing duplicate-section-id check for parity, and fixed the gallery page, which had been 500ing
+since Phase 0 on `shops.map is not a function` — it assumed a bare array where the endpoint returns
+a paged envelope. That was the home page, the one URL every visitor lands on.
+
+### D70 — a shop is never left without a storefront
+
+`ThemeService.ensureDefaultTheme` creates a per-type default on demand, as a **draft**. The
+storefront renders from `renderableConfig`, which falls back to the type's default when nothing
+is published — so a new shop has a complete, correct storefront immediately, and the default
+improves for everyone when it improves for one.
+
+Per-type defaults for `PHARMACY`, `FASHION` and `GROCERY`, plus a generic fallback. A pharmacy's
+leads with "prescriptions accepted", because that is the question its customers have. A test
+asserts **every** shop type's default passes the validator, so a default can never be
+unrenderable.
+
+### D71 — a template is a snapshot, and a live theme is never edited
+
+`shop_theme.config` is a **copy** of the template's. Editing a template therefore cannot restyle
+every shop that installed it, and deleting one cannot break them — which is why `template_id` is
+provenance and `ON DELETE SET NULL`.
+
+A live theme cannot be saved or deleted at all. Saving a half-finished configuration over what a
+customer is looking at is the single thing this API exists to prevent, and it is enforced in the
+entity, not just the UI.
+
+### D72 — a dangling asset reference is a warning, not an error
+
+A section may say `imageUrl: "asset:HERO/main"`, and that asset may not exist yet. A shop can lay
+out a page before uploading its photograph; refusing to save would make the editor fight them. The
+theme **saves**, and `danglingAssetHandles` reports it so the editor can warn. The renderer shows a
+placeholder.
+
+Verified live: installing the pharmacy template and saving it produced exactly one warning —
+`Section 'hero-1' references asset HERO/main, which does not exist` — and the theme still saved.
+
+### D73 — the preview IS the storefront
+
+The editor's preview calls the same `ThemeRenderer` with the same props shape as the SSR
+storefront. There is no second implementation to drift. `/api/v1/shop/theme/preview` returns a
+document byte-identical to what the storefront serves — asserted live:
+
+```
+preview == storefront config: True
+```
+
+### D74 — the storefront payload is one request per page view
+
+`GET /api/v1/p/shops/{slug}/storefront` returns the shop, the published theme, the category tiles,
+featured products, latest products and the shop's assets together. The alternative is six calls
+before the first product appears, and a page whose content depends on how many of them were fast.
+
+`category-grid` resolves from the shop's `shop_type` enum — the D17 payoff — and returns only
+categories the shop **has products in**. A grocery with 1,010 products across 10 categories shows
+those 10, not an empty grid of tiles its vertical merely permits.
+
+### Verified live
+
+| Step | Result |
+|---|---|
+| Admin marketplace | `pharmacy-trust` (PHARMACY), `general-storefront` (any), both published |
+| Grocery shop offered | `general-storefront` only — **pharmacy-trust correctly excluded** (D17) |
+| Install | 7 sections, as a draft |
+| Customise | `primary #7c3aed`, `radius 1rem`, hero heading changed |
+| Save | warning about the dangling asset, theme saved |
+| Draft not live | storefront still served the default |
+| Publish | storefront served the customised theme, 7 sections |
+| Preview == storefront | `True` |
+| Bad theme | `INVALID_THEME` with 3 problems named by path |
+| Edit a live theme | `409 ILLEGAL_STATE_TRANSITION` |
+| Withdraw | falls back to the platform default, still renders |
+| **SSR render** | HTTP 200, 99 KB HTML, `<h1>CUSTOMISED BY THE SHOP`, `--primary:#7c3aed` in the markup |
+
+Every section type in the live theme rendered with real data — no `unknown-section` fallback, no
+issues notice. Category grid links to `/s/my-shop/c/coffee`, `/s/my-shop/c/dairy` and so on, from
+real product counts.
+
+### Seeding, and why it is gated
+
+`ThemeTemplateSeeder` publishes two starter templates on boot and **never overwrites**. It is
+**off in the test profile** (`store.themes.seed=false`): a test asserting "a draft is not offered"
+cannot also tolerate a seeder that published a template on the way into the context. The right
+answer is to switch the seeder off, not to write tests that assume a fixed set of rows nobody
+controls. (Rows it had committed to the test database were removed once.)
+
+### Still deferred, deliberately
+
+- **`html` section** renders a notice, not markup. Raw HTML needs the sanitiser the plan defers to
+  Phase 9 (D15). The schema accepts the prop so a saved theme does not lose its data.
+- **`newsletter`** renders a layout block with no form: there is no subscriber table, and a form
+  that silently discards an address is worse than none.
+- **`social-feed`** renders a placeholder; a third-party script on every customer page view is not
+  a Phase 3 trade.
+- **`countdown`** renders the shell server-side. A live timer needs a client component, which would
+  make the section the one exception to "every section is a server component".
+
+### Phase 4 next
+
+Shop operations: orders board with bulk transitions, invoice generator, discount system, audience
+list, full shop settings, payment method configuration (including eSewa merchant credentials).

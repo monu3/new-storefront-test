@@ -14,6 +14,7 @@ import { LoginPage } from './pages/login';
 import { ForbiddenPage } from './pages/forbidden';
 import { AdminHome } from './pages/admin-home';
 import { ShopHome } from './pages/shop-home';
+import { ShopTheme } from './pages/shop-theme';
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -51,6 +52,14 @@ const router = createBrowserRouter([
       { index: true, element: <Navigate to="/shop" replace /> },
       { path: 'admin', element: <RequireRole auth={auth} roles={['ROLE_ADMIN']}><AdminHome /></RequireRole> },
       { path: 'shop', element: <RequireRole auth={auth} roles={['ROLE_SHOP']}><ShopHome /></RequireRole> },
+      {
+        path: 'shop/theme',
+        element: (
+          <RequireRole auth={auth} roles={['ROLE_SHOP']}>
+            <ShopTheme />
+          </RequireRole>
+        ),
+      },
       { path: 'forbidden', element: <ForbiddenPage /> },
     ],
   },

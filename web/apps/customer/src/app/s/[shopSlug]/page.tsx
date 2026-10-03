@@ -1,34 +1,51 @@
 import type { Metadata } from 'next';
 
 import { API_URL } from '@store-app/api-client';
-import { parseTheme, themeScopeStyle } from '@store-app/theme-engine';
+import { ThemeRenderer } from '@store-app/theme-engine';
+import type { StorefrontData } from '@store-app/theme-engine';
 
 import StorefrontLayout from './layout';
 
-interface StorefrontData {
-  shop: { name: string; description?: string; logoUrl?: string; slug: string };
-  theme: unknown;
+interface StorefrontResponse {
+  shopSlug: string;
+  shopName: string;
+  description?: string | null;
+  logoUrl?: string | null;
+  coverImageUrl?: string | null;
+  followerCount?: number;
+  shopType?: string;
+  themeConfig?: string;
+  sectionCount?: number;
+  fromPublishedTheme?: boolean;
+  categories?: StorefrontData['categories'];
+  featuredProducts?: StorefrontData['featuredProducts'];
+  latestProducts?: StorefrontData['latestProducts'];
+  assets?: StorefrontData['assets'];
 }
 
 /**
- * Storefront home, rendered on the server (D1).
+ * Storefront home, rendered on the server (D1, D8).
  *
- * Server rendering is what makes product pages indexable and share-previewable, which the
- * WhatsApp and social selling flow depends on. The theme config is fetched here and the section
- * list is resolved into markup before the HTML is streamed.
+ * <p>One fetch for everything the page needs: the shop, its published theme, and the data the
+ * commerce sections render from. The alternative is a storefront issuing six calls before the
+ * first product appears, and a page whose content depends on how many of them were fast.
+ *
+ * <p>The theme document is rendered by `ThemeRenderer` — the same function the console's editor
+ * preview calls. That is what "the preview matches the storefront" means concretely: there is
+ * only one implementation, so the two cannot drift.
  */
-async function getStorefront(shopSlug: string): Promise<StorefrontData | null> {
+async function getStorefront(shopSlug: string): Promise<StorefrontResponse | null> {
   try {
-    const res = await fetch(`${API_URL}/api/v1/shops/${shopSlug}`, {
+    const res = await fetch(`${API_URL}/api/v1/p/shops/${shopSlug}/storefront`, {
       headers: { Accept: 'application/json' },
-      // Revalidate every five minutes; a published theme should appear quickly without
-      // hammering the API on every request.
-      next: { revalidate: 300, tags: [`storefront:${shopSlug}`] },
+      // A published theme should appear quickly, without hammering the API on every request.
+      next: { revalidate: 60, tags: [`storefront:${shopSlug}`, `theme:${shopSlug}`] },
     });
     if (!res.ok) return null;
-    return await res.json();
+    return (await res.json()) as StorefrontResponse;
   } catch {
-    // A storefront must not 500 because the API is briefly down; a 404 page is more useful.
+    // A storefront must not 500 because the API is briefly down; a 404 is more useful than a
+    // stack trace a customer would never read.
     return null;
   }
 }
@@ -46,18 +63,20 @@ export async function generateMetadata({
   }
 
   return {
-    title: data.shop.name,
-    description: data.shop.description ?? `Shop at ${data.shop.name}`,
+    title: data.shopName,
+    description: data.description ?? `Shop at ${data.shopName}`,
     openGraph: {
-      title: data.shop.name,
-      description: data.shop.description ?? '',
-      images: data.shop.logoUrl ? [data.shop.logoUrl] : undefined,
-      type: 'website',
+      title: data.shopName,
+      description: data.description ?? `Shop at ${data.shopName}`,
+      // The cover image is what a WhatsApp or Facebook preview shows. Without it a shared link
+      // renders as a bare title, which is the difference between a link that gets clicked and one
+      // that does not — and social selling is a Phase 8 feature this has to be ready for.
+      images: data.coverImageUrl ? [{ url: data.coverImageUrl }] : undefined,
     },
   };
 }
 
-export default async function ShopHomePage({
+export default async function ShopHome({
   params,
 }: {
   params: Promise<{ shopSlug: string }>;
@@ -69,64 +88,35 @@ export default async function ShopHomePage({
     return (
       <StorefrontLayout>
         <main className="mx-auto max-w-3xl px-4 py-24 text-center">
-          <h1 className="text-2xl font-semibold">This shop is not available</h1>
-          <p className="mt-2 text-muted-foreground">
-            The link may be wrong, or the shop may have been suspended.
+          <h1 className="text-2xl font-bold">Shop not found</h1>
+          <p className="mt-2 text-sm text-muted-foreground">
+            This shop may not exist, or it may not be published yet.
           </p>
         </main>
       </StorefrontLayout>
     );
   }
 
-  const { theme, issues } = parseTheme(data.theme);
-
   return (
     <StorefrontLayout>
-      <div style={themeScopeStyle(theme.tokens)}>
-        <header className="border-b">
-          <div className="mx-auto flex max-w-6xl items-center gap-3 px-4 py-4">
-            {data.shop.logoUrl && (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img src={data.shop.logoUrl} alt="" className="h-9 w-9 rounded" />
-            )}
-            <span className="font-semibold">{data.shop.name}</span>
-          </div>
-        </header>
-
-        <main className="mx-auto max-w-6xl px-4 py-8">
-          {issues.length > 0 && (
-            <div className="mb-6 rounded-md border border-destructive/40 bg-destructive/10 p-3 text-sm">
-              This theme could not be fully loaded ({issues.length} issue
-              {issues.length === 1 ? '' : 's'}), so it is showing defaults.
-            </div>
-          )}
-
-          {theme.sections.length === 0 ? (
-            <div className="rounded-lg border border-dashed p-12 text-center text-muted-foreground">
-              <p className="font-medium">This storefront has no sections yet.</p>
-              <p className="mt-1 text-sm">
-                The shop owner can add sections from the appearance editor.
-              </p>
-            </div>
-          ) : (
-            <div className="space-y-8">
-              {theme.sections.map((section) => (
-                <section
-                  key={section.id}
-                  data-section-type={section.type}
-                  className="rounded-lg border border-dashed p-6 text-sm text-muted-foreground"
-                >
-                  <span className="font-mono text-xs">{section.type}</span>
-                  <p className="mt-1">
-                    Section rendering lands in Phase 3. The theme JSON is already flowing
-                    end to end.
-                  </p>
-                </section>
-              ))}
-            </div>
-          )}
-        </main>
-      </div>
+      <main className="mx-auto max-w-6xl px-4 pb-16">
+        <ThemeRenderer
+          config={data.themeConfig ?? {}}
+          data={{
+            shopSlug: data.shopSlug,
+            shopName: data.shopName,
+            description: data.description ?? null,
+            logoUrl: data.logoUrl ?? null,
+            coverImageUrl: data.coverImageUrl ?? null,
+            followerCount: data.followerCount,
+            shopType: data.shopType,
+            categories: data.categories ?? [],
+            featuredProducts: data.featuredProducts ?? [],
+            latestProducts: data.latestProducts ?? [],
+            assets: data.assets ?? [],
+          }}
+        />
+      </main>
     </StorefrontLayout>
   );
 }

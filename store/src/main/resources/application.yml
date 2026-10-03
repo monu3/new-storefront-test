@@ -69,6 +69,10 @@ spring:
 store:
   # Outbox relay (R5). Set enabled=false to run without RabbitMQ: the order flow still works and
   # events accumulate unpublished, which is the designed behaviour rather than a failure.
+  themes:
+    # Publishes two starter templates on boot if their codes are absent. Never overwrites.
+    # Off in the test profile, where tests assert on marketplace contents.
+    seed: true
   outbox:
     enabled: true
     poll-interval-ms: 2000
