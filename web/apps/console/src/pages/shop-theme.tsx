@@ -9,9 +9,26 @@ import {
   parseTheme,
   sectionDefinition,
 } from '@store-app/theme-engine';
-import type { SectionProps, SectionType, StorefrontData, ThemeSection } from '@store-app/theme-engine';
+import type { SectionType, StorefrontData, ThemeSection } from '@store-app/theme-engine';
 import { useThemeEditor } from '@store-app/state';
-import { Badge, Button, Card, CardContent, CardHeader, CardTitle, Input, Label, Select, Textarea } from '@store-app/ui';
+import {
+  Badge,
+  Button,
+  Card,
+  CardContent,
+  CardHeader,
+  CardTitle,
+  Input,
+  Label,
+  Select,
+  SelectContent,
+  SelectGroup,
+  SelectItem,
+  SelectLabel,
+  SelectTrigger,
+  SelectValue,
+  Textarea,
+} from '@store-app/ui';
 
 /**
  * The shop's theme editor (D8).
@@ -175,21 +192,28 @@ export function ShopTheme() {
         </div>
         <div className="flex items-center gap-2">
           {themes.length > 1 ? (
-            <Select
-              aria-label="Which theme"
-              className="w-48"
-              value={activeId ?? ''}
-              onChange={(e) => setActiveId(e.target.value)}
-            >
-              {themes.map((t) => (
-                <option key={t.id} value={t.id}>
-                  {t.name}
-                  {t.published ? ' (live)' : ''}
-                </option>
-              ))}
+            <Select value={activeId ?? ''} onValueChange={setActiveId}>
+              <SelectTrigger className="w-48" aria-label="Which theme">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {themes.map((t) => (
+                  <SelectItem key={t.id} value={t.id}>
+                    {t.name}
+                    {t.published ? ' (live)' : ''}
+                  </SelectItem>
+                ))}
+              </SelectContent>
             </Select>
           ) : null}
-          {editor.dirty ? <Badge variant="warning">Unsaved changes</Badge> : null}
+          {editor.dirty ? (
+            // The ported Badge has no 'warning' variant, and inventing one would mean the kit and
+            // the reference diverge. Outline plus a dot says the same thing honestly.
+            <Badge variant="outline">
+              <span aria-hidden className="mr-1.5 inline-block size-1.5 rounded-full bg-amber-500" />
+              Unsaved changes
+            </Badge>
+          ) : null}
           <Button variant="outline" onClick={editor.undo} disabled={!editor.past.length}>
             Undo
           </Button>
@@ -271,24 +295,25 @@ export function ShopTheme() {
               <Label className="text-xs uppercase tracking-wide text-muted-foreground">
                 Add a section
               </Label>
-              <Select
-                className="mt-1"
-                value=""
-                onChange={(e) => {
-                  const type = e.target.value as SectionType;
-                  if (type) editor.addSection(createSection(type));
-                }}
-              >
-                <option value="">Choose…</option>
-                {paletteGroups().map((group) => (
-                  <optgroup key={group.group} label={group.group}>
-                    {group.sections.map((s) => (
-                      <option key={s.type} value={s.type}>
-                        {s.label}
-                      </option>
-                    ))}
-                  </optgroup>
-                ))}
+              {/* Radix Select, so the palette is grouped and keyboard-navigable rather than a
+                  native <select>. The trigger shows the placeholder until something is chosen,
+                  because there is no meaningful "current value" for an action list. */}
+              <Select onValueChange={(value) => editor.addSection(createSection(value as SectionType))}>
+                <SelectTrigger className="mt-1">
+                  <SelectValue placeholder="Add a section…" />
+                </SelectTrigger>
+                <SelectContent>
+                  {paletteGroups().map((group) => (
+                    <SelectGroup key={group.group}>
+                      <SelectLabel>{group.group}</SelectLabel>
+                      {group.sections.map((section) => (
+                        <SelectItem key={section.type} value={section.type}>
+                          {section.label}
+                        </SelectItem>
+                      ))}
+                    </SelectGroup>
+                  ))}
+                </SelectContent>
               </Select>
             </div>
           </CardContent>
@@ -490,17 +515,17 @@ function SectionInspector({
         {typeof props.columns === 'number' ? (
           <div>
             <Label htmlFor={`${section.id}-columns`}>Columns</Label>
-            <Select
-              id={`${section.id}-columns`}
-              className="mt-1"
-              value={String(props.columns)}
-              onChange={(e) => set('columns', Number(e.target.value))}
-            >
-              {[2, 3, 4, 5, 6].map((n) => (
-                <option key={n} value={n}>
-                  {n}
-                </option>
-              ))}
+            <Select value={String(props.columns)} onValueChange={(v) => set('columns', Number(v))}>
+              <SelectTrigger id={`${section.id}-columns`} className="mt-1">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {[2, 3, 4, 5, 6].map((n) => (
+                  <SelectItem key={n} value={String(n)}>
+                    {n}
+                  </SelectItem>
+                ))}
+              </SelectContent>
             </Select>
           </div>
         ) : null}
@@ -572,4 +597,4 @@ function describeError(error: unknown): string {
   return e?.message ?? 'Something went wrong.';
 }
 
-export type { SectionProps };
+

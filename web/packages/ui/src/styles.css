@@ -1,87 +1,83 @@
 /**
- * shadcn theme tokens.
+ * shadcn theme tokens - the single source of truth for colour in both frontends.
  *
- * These CSS custom properties are the single source of truth for colour in both frontends, and
- * they are exactly the names a theme's `tokens` object writes to. That is what lets a shop's
- * chosen palette flow into every shadcn component — including the admin console chrome — with
- * no second token system (see `@store-app/theme-engine`'s `tokensToCssVariables`).
+ * These custom properties are exactly the names a theme's `tokens` object writes to (see
+ * `ThemeRenderer` in `@store-app/theme-engine`), which is what lets a shop's chosen palette flow
+ * into every shadcn component with no second token system.
+ *
+ * Ported from the reference storefront project, which targets Tailwind v3. This file is consumed
+ * by Tailwind v4, which reads its mappings from each app's entry CSS rather than a JS config.
+ * Three things the reference relied on are therefore NOT here, and each omission is deliberate:
+ *
+ * - The `tw-animate-css` import. An `@import` inside a workspace package's stylesheet resolves
+ *   against the app that consumes it, and pnpm's isolated `node_modules` means the package is not
+ *   visible from the app root. Each app imports it in its own entry CSS instead.
+ *
+ * - The `@theme` block for corner radius and the caret animation. `@theme` is a Tailwind at-rule,
+ *   not plain CSS, and one placed in an imported package stylesheet is passed through
+ *   unprocessed. Verified rather than assumed: with the block here, the `@keyframes` compiled and
+ *   the variable binding them did not. Those mappings live in each app's globals.css.
+ *
+ * - The colour `--color-*` utilities. Those resolve `hsl(var(--x))` against a variable the theme
+ *   engine sets at runtime on a scoped element, so they belong to each app's `@theme inline`.
+ *
+ * What remains below is plain CSS custom properties, which survive that pipeline unchanged.
  */
+
 @layer base {
   :root {
     --background: 0 0% 100%;
     --foreground: 240 10% 4%;
-
     --card: 0 0% 100%;
     --card-foreground: 240 10% 4%;
-
     --popover: 0 0% 100%;
     --popover-foreground: 240 10% 4%;
-
     --primary: 262 83% 58%;
     --primary-foreground: 0 0% 100%;
-
     --secondary: 240 5% 96%;
     --secondary-foreground: 240 6% 10%;
-
     --muted: 240 5% 96%;
     --muted-foreground: 240 4% 46%;
-
     --accent: 240 5% 96%;
     --accent-foreground: 240 6% 10%;
-
     --destructive: 0 72% 51%;
     --destructive-foreground: 0 0% 100%;
-
     --success: 142 71% 45%;
     --warning: 38 92% 50%;
-
     --border: 240 6% 90%;
     --input: 240 6% 90%;
     --ring: 262 83% 58%;
-
     --radius: 0.75rem;
   }
-
   .dark {
     --background: 240 10% 4%;
     --foreground: 0 0% 98%;
-
     --card: 240 10% 6%;
     --card-foreground: 0 0% 98%;
-
     --popover: 240 10% 6%;
     --popover-foreground: 0 0% 98%;
-
     --primary: 263 70% 65%;
     --primary-foreground: 240 10% 4%;
-
     --secondary: 240 4% 16%;
     --secondary-foreground: 0 0% 98%;
-
     --muted: 240 4% 16%;
     --muted-foreground: 240 5% 65%;
-
     --accent: 240 4% 16%;
     --accent-foreground: 0 0% 98%;
-
     --destructive: 0 63% 50%;
     --destructive-foreground: 0 0% 98%;
-
     --border: 240 4% 16%;
     --input: 240 4% 16%;
     --ring: 263 70% 65%;
   }
-
   * {
     border-color: hsl(var(--border));
   }
-
   body {
     background-color: hsl(var(--background));
     color: hsl(var(--foreground));
     font-family: var(--font-body, system-ui, sans-serif);
   }
-
   h1, h2, h3, h4 {
     font-family: var(--font-heading, inherit);
   }

@@ -3536,3 +3536,137 @@ Two process changes are now standing:
    CSS and served modules — useful, and still not a browser. Any check that asserts "the app works"
    should be an actual load, and until a browser is attached to the development session that check
    has to be done by hand.
+
+---
+
+## Appendix S — UI kit ported from the reference storefront
+
+`packages/ui` is now the reference project's own kit — its `@doko/shared` component set — rather
+than the handful of primitives written in Phase 0. **The reference at
+`~/Developer/web-storefront` was read only.** Files were copied out of it; nothing in it was
+modified, and `git status` there shows only changes that predate this session (timestamps from
+Oct 2, a day before it began).
+
+### What the reference actually uses, measured rather than assumed
+
+Scanned across its 198 source files:
+
+| Primitive | files importing it | | Primitive | files |
+|---|---|---|---|---|
+| `button` | 80 | | `select` | 5 |
+| `card` | 36 | | `dialog` | 5 |
+| `input` | 30 | | `sheet` | 4 |
+| `label` | 23 | | `table` | 4 |
+| `badge` | 15 | | `avatar`, `checkbox` | 3 |
+
+So its UI is overwhelmingly plain shadcn. Its own bespoke `Card/`, `Skeleton/`, `Dropdown/`,
+`MenuItem/`, `Spinner/`, `ConfigProvider/` and `progressiveBar/` are used in **two, one, one, zero,
+zero, zero and zero** files respectively. The port therefore brings in the shadcn set as the design
+language to match, and keeps the bespoke set as `legacy-*` rather than promoting it.
+
+### The usage count was wrong the first time, instructively
+
+The first pass counted which components the reference's *application* files import and concluded
+`MenuItem` and `Spinner` were dead. `Dropdown` imports `MenuItem`. A count taken from outside the
+dependency graph misses the graph entirely — the drop list was then re-checked by **compiling**,
+which is what caught it. Counting imports is not a substitute for building.
+
+### Two components with the same name
+
+`Card` and `Skeleton` each exist twice in the reference — once as shadcn, once as its own variant.
+The shadcn one keeps the plain name, because that is what 36 reference files and this project's own
+pages both import. The variants are `LegacyCard` and `LegacySkeleton`.
+
+`Card/` also collided *by case* with `card.tsx`: on a case-insensitive filesystem those are the same
+path, and TypeScript refuses to include both in one program (`TS1261`). Renamed to `legacy-card/`
+rather than dropped, which keeps both components.
+
+### Adaptations required, and why each was necessary
+
+The kit targets React 18, Tailwind v3 and a looser tsconfig. This project is React 19, Tailwind v4,
+`verbatimModuleSyntax` and `noUncheckedIndexedAccess`. Every change is mechanical and commented at
+its site:
+
+- **Type-only imports** (`verbatimModuleSyntax`): 5 files.
+- **`useRef` needs an initial value** in React 19: 2 hooks.
+- **`noUncheckedIndexedAccess`**: `input-otp`'s slot read is guarded and returns `null` rather than
+  asserting; `shallowEqual`'s key is narrowed once; `Card`'s optional flags are coerced.
+- **Dependencies are now declared.** Radix (18 packages), `cmdk`, `input-otp`, `motion`, `recharts`,
+  `react-hook-form`, `react-resizable-panels`, `lodash`, `classnames`, `react-icons` and
+  `react-use-measure` are real dependencies of `@store-app/ui`. **The reference's shared package
+  declares none of them** — it relies on its two apps to hoist them, so a component there importing
+  `recharts` only works because some app happens to depend on it. That is a missing dependency
+  waiting to surface as a blank screen.
+- **`@shared/*` became relative paths**, via an explicit layout map. The reference resolves them
+  through a TS alias with no build step, which does not survive being consumed as a workspace
+  dependency. The first attempt guessed paths and produced 29 unresolvable imports; the mapping is
+  now written down in `scripts/rewrite_shared_imports.py`.
+
+### D84 — Tailwind was never scanning `packages/`
+
+This is the one that would have made the whole port look broken while everything "passed".
+
+Tailwind v4 detects sources automatically, starting from the directory of the CSS file that pulls
+in Tailwind — which here is `apps/customer` or `apps/console`. **Nothing in `packages/` was ever
+scanned**, and the entire UI kit lives there.
+
+The failure is silent and total for anything used only in the kit. Measured before the fix:
+
+| Class | Used only in | CSS generated |
+|---|---|---|
+| `hover:shadow-lg` | `packages/ui/src/ui/card.tsx` | **0 rules** |
+
+Every card in the app would have rendered with no hover elevation, and the eight overlay components
+would have had no animations. Nothing errors; the classes simply do not exist.
+
+Fixed with explicit `@source` directives in each app's entry CSS. The compiled stylesheet went from
+**16 KB to 87 KB**, and `hover:shadow-lg` is now generated.
+
+### D85 — three things had to move into each app's Tailwind entry
+
+`@theme` is a Tailwind at-rule, not plain CSS, and an `@import` in a workspace package's stylesheet
+resolves against the *consuming app* — where pnpm's isolated `node_modules` does not expose the
+package. Both fail silently. Measured:
+
+| Thing | In `packages/ui` | In the app entry |
+|---|---|---|
+| `@keyframes caret-blink` | compiled ✓ | — |
+| `--animate-caret-blink` (binds it) | **not compiled** | compiled ✓ |
+| `tw-animate-css` utilities | **not resolvable** | present ✓ |
+
+So the animation import, the caret binding and the colour `@source` list all live in each app's
+`globals.css`, where they take effect. `packages/ui/styles.css` keeps the plain custom properties,
+which survive the pipeline unchanged.
+
+Corner radius was a false alarm worth recording: `--radius-lg` never appears in the output because
+`@theme inline` **substitutes** the value into utilities rather than emitting the variable. The
+mapping was working all along — `.rounded-lg { border-radius: var(--radius) }` — and it is what
+makes a theme's `radius` token reach every rounded corner.
+
+### The rule that costs the most: `*/` inside a comment
+
+A path like `apps/*/src/**/globals.css`, written inside a CSS comment, **closes the comment early**.
+The rest of the line is then parsed as CSS and the stylesheet fails to compile with
+`Syntax error: Unknown word` — a message that points nowhere near the cause.
+
+This cost several iterations. It is now avoided by writing `apps/<app>/src/app/globals.css` in
+prose, and the file is checked with a real PostCSS parse rather than a brace count, which is what
+misled me twice (`grep -c` on minified CSS counts *lines*, and a hand-rolled brace counter
+mis-strips block comments).
+
+### Verified in the compiled CSS both apps actually receive
+
+| | storefront :3000 | console :5173 |
+|---|---|---|
+| stylesheet | 87 KB | 84 KB |
+| `animate-in`, `fade-in-0`, `zoom-in-95` | ✓ | ✓ |
+| `slide-in-from-top`, `exit-*` | ✓ | ✓ |
+| `bg-card`, `hover:shadow-lg` | ✓ | ✓ |
+| `.rounded-lg` → `var(--radius)` | ✓ | ✓ |
+| `--animate-caret-blink` | ✓ | ✓ |
+| theme token applied | `--primary:#7c3aed` | ✓ |
+
+All 10 packages typecheck and both apps build. The theme editor was migrated to the ported
+components' real APIs — Radix `Select` with `SelectGroup`/`SelectLabel`/`SelectTrigger` rather than a
+native `<select onChange>`, and a `Badge variant="outline"` with a dot, because the ported `Badge`
+has no `warning` variant and inventing one would make our kit diverge from the reference.

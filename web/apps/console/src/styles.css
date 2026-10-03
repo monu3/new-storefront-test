@@ -1,4 +1,26 @@
 @import 'tailwindcss';
+@import 'tw-animate-css';
+
+/* ============================================================================
+ * Tell Tailwind where the class names live.
+ *
+ * Tailwind v4 detects sources automatically, starting from the directory of the CSS file that
+ * pulls in Tailwind. That directory is `apps/customer`, so **nothing in `packages/` is ever
+ * scanned** — and the entire UI kit lives there.
+ *
+ * The failure is silent and total for anything used only in the kit. Measured before this fix:
+ * `hover:shadow-lg`, which appears in `packages/ui/src/ui/card.tsx` and nowhere else, generated
+ * zero CSS. Every card in the app would have rendered with no hover elevation, and the eight
+ * overlay components would have had no animations. Nothing errors; the classes simply do not
+ * exist.
+ *
+ * Paths are relative to this file. Each app needs its own list, because the two apps load
+ * different CSS entry points and neither one can see the other.
+ * ========================================================================= */
+@source '../../../packages/ui/src';
+@source '../../../packages/theme-engine/src';
+@source '../../../packages/icons/src';
+
 
 /* Same token bridge as the customer portal: shadcn CSS variables feed Tailwind utilities, so
    a storefront theme's palette is the only place colours are defined. */
@@ -27,4 +49,19 @@
   --radius-lg: var(--radius);
   --radius-md: calc(var(--radius) - 2px);
   --radius-sm: calc(var(--radius) - 4px);
+}
+
+/* The input-otp caret animation, carried on from the reference's tailwind config.
+ *
+ * Bound through `@theme` so a consumer can change the duration without redefining the keyframes.
+ * It has to live in the Tailwind entry: an `@theme` block inside a workspace package is not
+ * processed. See packages/ui/src/styles.css.
+ */
+@theme {
+  --animate-caret-blink: caret-blink 1.25s ease-out infinite;
+}
+
+@keyframes caret-blink {
+  0%, 70%, 100% { opacity: 30%; }
+  20%, 50%      { opacity: 50%; }
 }
