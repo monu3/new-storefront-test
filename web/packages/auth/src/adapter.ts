@@ -7,9 +7,18 @@ import type { AuthConfig, RealmName } from './config';
 /**
  * Application roles, mirroring what the backend maps realm roles to.
  *
- * The backend is the authority; these names must match the `ROLE_*` values the resource server
- * produces. A mismatch shows up as a 403 rather than a compile error, so the mapping is
- * asserted in one place and reused by the guards below.
+ * Spring Security authority names, matching what the backend's resource server produces.
+ *
+ * <p>These are **not** the Keycloak realm role names. The `ops` realm grants `ADMIN` and `SHOP`;
+ * the customers realm grants `CUSTOMER`. Spring expects authorities prefixed with `ROLE_`, so the
+ * backend maps them explicitly in `KeycloakJwtAuthenticationConverter` rather than blanket-prefixing
+ * — so that a role cannot leak across realms by sharing a name. See {@link REALM_ROLE_MAP}.
+ *
+ * <p>This file previously assumed the prefix was already there and filtered realm roles against
+ * these values directly. A realm role of `SHOP` therefore matched nothing, `readRoles()` returned
+ * `[]`, and every guarded route redirected to /forbidden — while the token in the browser plainly
+ * said `"realm_access":{"roles":["SHOP"]}`. The comment on this constant predicted that exact
+ * failure, which is a reminder that a comment describing a bug is not a fix for one.
  */
 export const APP_ROLE = {
   ADMIN: 'ROLE_ADMIN',
@@ -19,6 +28,22 @@ export const APP_ROLE = {
 } as const;
 
 export type AppRole = (typeof APP_ROLE)[keyof typeof APP_ROLE];
+
+/**
+ * Keycloak realm role -> Spring authority, per realm.
+ *
+ * A copy of the backend's `KeycloakJwtAuthenticationConverter.REALM_ROLE_MAP`, and it has to stay
+ * a copy: the console cannot import from the API, and the two must agree or the console shows a
+ * user a screen whose every action 403s.
+ *
+ * Per realm rather than a blanket prefix, deliberately. A blanket prefix would let the `ops`
+ * realm's `SHOP` role and a hypothetical `customers` realm role of the same name both resolve, and
+ * a role must not be able to cross realms.
+ */
+export const REALM_ROLE_MAP: Record<string, Record<string, AppRole>> = {
+  ops: { ADMIN: APP_ROLE.ADMIN, SHOP: APP_ROLE.SHOP },
+  customers: { CUSTOMER: APP_ROLE.CUSTOMER },
+};
 
 export interface AuthSession {
   authenticated: boolean;
@@ -82,12 +107,32 @@ export function createKeycloakAdapter(config: AuthConfig): AuthAdapter {
   let initPromise: Promise<boolean> | null = null;
   let roles: AppRole[] = [];
 
+  /**
+   * Realm roles from the token, mapped to Spring authorities.
+   *
+   * <p>The mapping is by realm, not by prefix. `SHOP` in the `ops` realm becomes `ROLE_SHOP`;
+   * `SHOP` in any other realm is discarded, which is what stops a role crossing realms.
+   */
   function readRoles(): AppRole[] {
     const token = kc.tokenParsed as { realm_access?: { roles?: string[] } } | undefined;
     const realmRoles = token?.realm_access?.roles ?? [];
-    return realmRoles.filter((r): r is AppRole =>
-      Object.values(APP_ROLE).includes(r as AppRole),
-    );
+    const allowed = REALM_ROLE_MAP[config.realm] ?? {};
+
+    const mapped = realmRoles
+      .map((role) => allowed[role])
+      .filter((authority): authority is AppRole => authority !== undefined);
+
+    if (realmRoles.length > 0 && mapped.length === 0) {
+      // Loud on purpose. The console is about to redirect to /forbidden with no explanation, and
+      // the cause is a role-name mismatch between here and the backend — which is invisible
+      // otherwise, because the token looks perfectly valid in the browser.
+      console.warn(
+        `[auth] none of the realm roles ${JSON.stringify(realmRoles)} map to an authority in ` +
+          `realm "${config.realm}". Known roles: ${JSON.stringify(Object.keys(allowed))}. ` +
+          `If this is a role mismatch with the backend, every page will redirect to /forbidden.`,
+      );
+    }
+    return mapped;
   }
 
   function getSession(): AuthSession {

@@ -35,16 +35,29 @@ export interface CategoryTile {
   productCount: number;
 }
 
+/**
+ * A product as the storefront is told about it.
+ *
+ * <p>Field names match `PublicProductView` on the server **exactly**, and that matters more than it
+ * looks. The API once serialised the JPA entity directly, which sent `basePriceMinor` where this
+ * type expected `price` — so every product card on the live site rendered "Rs. NaN", and nothing
+ * failed. A DTO on both sides, with the same names, is what makes that class of mismatch visible.
+ *
+ * <p>Note what is absent: no cost price, no sold or view counts. Those are the shop's business,
+ * and the storefront is an unauthenticated endpoint.
+ */
 export interface ProductSummary {
-  id?: string;
+  id: string;
+  slug: string;
   name: string;
-  slug?: string;
+  shortDescription?: string | null;
+  categoryLabel?: string | null;
+  /** Minor units (paisa). */
   price: number;
   compareAt?: number | null;
-  categoryLabel?: string;
-  shortDescription?: string | null;
   hasDiscount?: boolean;
   imageUrl?: string | null;
+  purchasable?: boolean;
 }
 
 export interface ThemeAssetData {

@@ -31,4 +31,13 @@ public interface MediaAssetRepository extends JpaRepository<MediaAsset, UUID> {
 	long countByShopId(UUID shopId);
 
 	long countByProductId(UUID productId);
+
+	/**
+	 * Every asset attached to a product, oldest first, so the first row per product is its
+	 * primary image.
+	 *
+	 * <p>One query for a whole storefront page. Resolving each product's image separately is 24
+	 * queries on a single page view, and the storefront is server-rendered on every request.
+	 */
+	List<MediaAsset> findByShopIdAndProductIdIsNotNullOrderByIdAsc(UUID shopId);
 }

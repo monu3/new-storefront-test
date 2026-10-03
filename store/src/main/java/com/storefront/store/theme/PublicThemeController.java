@@ -11,6 +11,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 import com.storefront.store.catalog.Product;
+import com.storefront.store.catalog.PublicProductView;
 import com.storefront.store.catalog.ProductCategory;
 import com.storefront.store.catalog.ProductRepository;
 import com.storefront.store.shop.Shop;
@@ -46,6 +47,7 @@ public class PublicThemeController {
 	private final ThemeService themes;
 	private final ShopRepository shops;
 	private final ProductRepository products;
+	private final com.storefront.store.media.MediaAssetRepository media;
 
 	/**
 	 * Everything a storefront page needs for one shop, in one request.
@@ -65,16 +67,26 @@ public class PublicThemeController {
 
 		String config = themes.renderableConfig(shop);
 
-		List<Product> featured = products.findByShopIdAndStatusAndDeletedAtIsNull(shop.getId(),
-						Product.Status.ACTIVE,
-						org.springframework.data.domain.PageRequest.of(0, SECTION_PRODUCT_LIMIT))
-				.getContent().stream()
-				.filter(Product::isFeatured)
-				.toList();
-
-		List<Product> latest = products.findByShopIdAndStatusAndDeletedAtIsNull(shop.getId(),
+		List<Product> active = products.findByShopIdAndStatusAndDeletedAtIsNull(shop.getId(),
 				Product.Status.ACTIVE,
 				org.springframework.data.domain.PageRequest.of(0, SECTION_PRODUCT_LIMIT)).getContent();
+
+		List<Product> featured = active.stream().filter(Product::isFeatured).toList();
+
+		// "Popular right now" falls back to the newest products when the shop has featured
+		// nothing. An empty carousel on a homepage reads as a broken shop, and featuring products is
+		// something a new shop has not had time to do yet.
+		List<Product> showcase = featured.isEmpty() ? active : featured;
+
+		// One query for every product image, grouped in memory. Asking per product would be 24
+		// queries on a single page view.
+		java.util.Map<UUID, String> firstImageByProduct = media
+				.findByShopIdAndProductIdIsNotNullOrderByIdAsc(shop.getId()).stream()
+				.filter(asset -> asset.getProductId() != null)
+				.collect(java.util.stream.Collectors.toMap(
+						com.storefront.store.media.MediaAsset::getProductId,
+						com.storefront.store.media.MediaAsset::displayUrl,
+						(first, later) -> first));
 
 		return new StorefrontData(
 				shop.getSlug(),
@@ -90,8 +102,8 @@ public class PublicThemeController {
 				// a customer does not, and it is harmless.
 				themes.hasPublishedTheme(shop),
 				categoriesFor(shop),
-				featured,
-				latest,
+				showcase.stream().map(p -> toView(p, firstImageByProduct.get(p.getId()))).toList(),
+				active.stream().map(p -> toView(p, firstImageByProduct.get(p.getId()))).toList(),
 				themes.assetsOf(shop, null).stream()
 						.map(asset -> new AssetData(asset.getId(), asset.getKind(), asset.getHandle(),
 								asset.getName(), asset.getConfig()))
@@ -105,6 +117,17 @@ public class PublicThemeController {
 	 * should show three categories on its storefront, not the five its vertical permits — a grid of
 	 * mostly-empty tiles is worse than a smaller honest one.
 	 */
+	/**
+	 * Maps a product to the shape the storefront renders.
+	 *
+	 * <p>Never returns the entity. See {@link PublicProductView} for what that costs otherwise:
+	 * {@code costPriceMinor} — the shop's margin — was being published on an unauthenticated
+	 * endpoint, along with sales and view counts.
+	 */
+	private PublicProductView toView(Product product, String imageUrl) {
+		return PublicProductView.from(product, imageUrl);
+	}
+
 	private List<CategoryTile> categoriesFor(Shop shop) {
 		Map<ProductCategory, Long> counts = products
 				.findByShopIdAndStatusAndDeletedAtIsNull(shop.getId(), Product.Status.ACTIVE,
@@ -132,8 +155,8 @@ public class PublicThemeController {
 			int sectionCount,
 			boolean fromPublishedTheme,
 			List<CategoryTile> categories,
-			List<Product> featuredProducts,
-			List<Product> latestProducts,
+			List<PublicProductView> featuredProducts,
+			List<PublicProductView> latestProducts,
 			List<AssetData> assets) {
 	}
 

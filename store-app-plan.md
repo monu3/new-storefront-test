@@ -3670,3 +3670,80 @@ All 10 packages typecheck and both apps build. The theme editor was migrated to 
 components' real APIs — Radix `Select` with `SelectGroup`/`SelectLabel`/`SelectTrigger` rather than a
 native `<select onChange>`, and a `Badge variant="outline"` with a dot, because the ported `Badge`
 has no `warning` variant and inventing one would make our kit diverge from the reference.
+
+---
+
+## Appendix T — the console's role mapping, and why it 403'd on a valid token
+
+Signing in as `ops.test@storeapp.local` produced a valid Keycloak token containing
+`"realm_access":{"roles":["SHOP"]}` — and every guarded route still redirected to `/forbidden`.
+
+### D86 — realm roles are mapped to authorities per realm, not compared directly
+
+`APP_ROLE` holds Spring Security authority names (`ROLE_SHOP`, `ROLE_ADMIN`, `ROLE_CUSTOMER`).
+`readRoles()` was filtering the token's realm roles against those values **directly**:
+
+```ts
+realmRoles.filter((r) => Object.values(APP_ROLE).includes(r as AppRole))
+```
+
+`'SHOP'` is not `'ROLE_SHOP'`, so the filter matched nothing, `readRoles()` returned `[]`, and
+`RequireRole` found no role and redirected. The token was valid; the console simply could not read
+it.
+
+The backend already had this right. `KeycloakJwtAuthenticationConverter` maps explicitly, per
+realm, rather than blanket-prefixing:
+
+```java
+"ops"       -> { "ADMIN": "ROLE_ADMIN", "SHOP": "ROLE_SHOP" }
+"customers" -> { "CUSTOMER": "ROLE_CUSTOMER" }
+```
+
+Deliberately a **map rather than a prefix**: a prefix would let `ops.SHOP` and a same-named role in
+any other realm both resolve, and a role must not be able to cross realms. The console now mirrors
+that table in `REALM_ROLE_MAP`.
+
+Verified against the real declarations in `adapter.ts` — not a copy that could drift:
+
+| | realm roles `['SHOP']`, realm `ops` |
+|---|---|
+| old filter | `[]` → every guarded route 403s |
+| new mapping | `['ROLE_SHOP']` → passes |
+
+Cross-realm containment holds: `ops` maps `SHOP`; `customers` and any unknown realm discard it.
+
+### The comment predicted this bug and shipped anyway
+
+`APP_ROLE` carried this warning:
+
+> *"The backend is the authority; these names must match the `ROLE_*` values the resource server
+> produces. A mismatch shows up as a 403 rather than a compile error…"*
+
+The mismatch was exactly that, and it was still there. A comment describing a failure mode is not a
+fix for one — and this is the **fourth** console bug in a row that no test caught, because every
+one of them only appears when a real browser runs the code.
+
+`readRoles()` now also warns loudly when a token has realm roles that map to nothing:
+
+> `[auth] none of the realm roles ["SHOP"] map to an authority in realm "ops". Known roles: … If
+> this is a role mismatch with the backend, every page will redirect to /forbidden.`
+
+A silent role mismatch is the hardest kind of auth bug to debug, because the token looks perfectly
+valid in the browser and every API call from that token works. The warning names the cause.
+
+### What this class of bug costs
+
+| Bug | Symptom | Why nothing caught it |
+|---|---|---|
+| `check-sso` never settles | white page | promise never resolved; no error |
+| `process.env` at module scope | white page | build and typecheck pass |
+| unguarded re-`init()` | unhandled rejection | needs two concurrent callers in a browser |
+| **role filter vs authority name** | **403 on a valid token** | **token looks right; API calls succeed** |
+
+The last is the nastiest. A shop owner signs in, the token is populated, every backend call works
+— and the console shows "you do not have access to this area", which reads as a permissions
+problem in the platform rather than a string comparison in the browser. It needs a browser to find
+and a real login to reproduce, which is why it took four attempts.
+
+Standing process, now stated three times across appendices R, S and T: **a frontend change is not
+verified until someone signs in and lands on a real page.**

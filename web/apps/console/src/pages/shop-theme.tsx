@@ -68,16 +68,19 @@ export function ShopTheme() {
         { code: 'SPICES', label: 'Spices', productCount: 24 },
         { code: 'OIL', label: 'Cooking Oil', productCount: 5 },
       ],
+      // Every field the type requires. The mock previously omitted id and slug, and compiled
+      // anyway, because ProductSummary had them optional — which is exactly how the live site
+      // ended up rendering "Rs. NaN" while every check passed.
       featuredProducts: [
-        { name: 'Sona Masoori 5kg', price: 45000, categoryLabel: 'Rice & Grains' },
-        { name: 'Organic Red Lentils 1kg', price: 18000, categoryLabel: 'Lentils' },
-        { name: 'Himalayan Salt 1kg', price: 9000, categoryLabel: 'Spices' },
-        { name: 'Cold-pressed Mustard Oil 1L', price: 62000, categoryLabel: 'Cooking Oil' },
+        { id: 'p1', slug: 'sona-masoori-5kg', name: 'Sona Masoori 5kg', price: 45000, categoryLabel: 'Rice & Grains', purchasable: true },
+        { id: 'p2', slug: 'organic-red-lentils-1kg', name: 'Organic Red Lentils 1kg', price: 18000, categoryLabel: 'Lentils', purchasable: true },
+        { id: 'p3', slug: 'himalayan-salt-1kg', name: 'Himalayan Salt 1kg', price: 9000, categoryLabel: 'Spices', purchasable: true },
+        { id: 'p4', slug: 'mustard-oil-1l', name: 'Cold-pressed Mustard Oil 1L', price: 62000, categoryLabel: 'Cooking Oil', purchasable: true },
       ],
       latestProducts: [
-        { name: 'Whole Black Pepper 100g', price: 14000, categoryLabel: 'Spices' },
-        { name: 'Basmati Rice 1kg', price: 22000, categoryLabel: 'Rice & Grains' },
-        { name: 'Red Lentils 2kg', price: 32000, categoryLabel: 'Lentils' },
+        { id: 'p5', slug: 'black-pepper-100g', name: 'Whole Black Pepper 100g', price: 14000, categoryLabel: 'Spices', purchasable: true },
+        { id: 'p6', slug: 'basmati-rice-1kg', name: 'Basmati Rice 1kg', price: 22000, categoryLabel: 'Rice & Grains', purchasable: true },
+        { id: 'p7', slug: 'red-lentils-2kg', name: 'Red Lentils 2kg', price: 32000, categoryLabel: 'Lentils', purchasable: true },
       ],
       assets: [],
     }),
