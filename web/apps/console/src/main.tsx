@@ -13,8 +13,8 @@ import { NotFound } from './pages/not-found';
 import { LoginPage } from './pages/login';
 import { ForbiddenPage } from './pages/forbidden';
 import { AdminHome } from './pages/admin-home';
-import { ShopHome } from './pages/shop-home';
 import { ShopTheme } from './pages/shop-theme';
+import { ShopDashboard } from './pages/shop-dashboard';
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -51,7 +51,14 @@ const router = createBrowserRouter([
     children: [
       { index: true, element: <Navigate to="/shop" replace /> },
       { path: 'admin', element: <RequireRole auth={auth} roles={['ROLE_ADMIN']}><AdminHome /></RequireRole> },
-      { path: 'shop', element: <RequireRole auth={auth} roles={['ROLE_SHOP']}><ShopHome /></RequireRole> },
+      {
+        path: 'shop',
+        element: (
+          <RequireRole auth={auth} roles={['ROLE_SHOP']}>
+            <ShopDashboard auth={auth} />
+          </RequireRole>
+        ),
+      },
       {
         path: 'shop/theme',
         element: (

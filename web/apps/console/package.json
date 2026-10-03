@@ -22,9 +22,11 @@
     "@store-app/ui": "workspace:*",
     "@store-app/validation": "workspace:*",
     "@tanstack/react-query": "^5.62.0",
+    "lucide-react": "^0.468.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "react-router-dom": "^7.1.1",
+    "recharts": "^2.15.4",
     "zustand": "^5.0.2"
   },
   "devDependencies": {

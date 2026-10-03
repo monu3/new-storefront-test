@@ -1,0 +1,291 @@
+import { useQuery } from '@tanstack/react-query';
+import {
+  Area,
+  AreaChart,
+  Bar,
+  BarChart,
+  CartesianGrid,
+  ResponsiveContainer,
+  Tooltip,
+  XAxis,
+  YAxis,
+} from 'recharts';
+
+import { authorizedFetch } from '@store-app/auth';
+import type { AuthAdapter } from '@store-app/auth';
+import type { Dashboard } from '@store-app/api-client';
+import { Card, CardContent, Skeleton } from '@store-app/ui';
+
+/**
+ * The shop dashboard (Phase 4).
+ *
+ * <p>Charts replicated from the reference application: a grouped revenue bar chart and a monthly
+ * sales line, with the same palette and axis treatment.
+ *
+ * <p><b>Every figure comes from the shop's own orders.</b> Nothing is seeded. A shop with no sales
+ * sees zeros and flat charts, which is the truth — and an owner who mistakes invented numbers for
+ * real ones will price against them.
+ */
+
+/** The reference's chart colours: terracotta and teal. */
+const SERIES = ['#d97757', '#3f9e8f'];
+
+export function ShopDashboard({ auth }: { auth: AuthAdapter }) {
+  const { data, isLoading, error } = useQuery({
+    queryKey: ['shop-dashboard'],
+    queryFn: async () => {
+      const response = await authorizedFetch(auth, '/api/v1/shop/dashboard');
+      if (!response.ok) throw new Error(`Dashboard request failed: ${response.status}`);
+      return (await response.json()) as Dashboard;
+    },
+    staleTime: 60_000,
+  });
+
+  if (isLoading) return <DashboardSkeleton />;
+
+  if (error) {
+    return (
+      <Card>
+        <CardContent className="p-8 text-center">
+          <p className="font-medium">Could not load your dashboard</p>
+          <p className="mt-1 text-sm text-muted-foreground">{error.message}</p>
+        </CardContent>
+      </Card>
+    );
+  }
+  if (!data) return null;
+
+  return (
+    <div className="space-y-6">
+      {/* ------------------------------------------------------------ KPI row */}
+      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+        <StatCard
+          label="Total Revenue"
+          value={data.totalRevenueDisplay}
+          changePct={data.revenueChangePct}
+          icon={<span className="text-lg">$</span>}
+          testId="stat-revenue"
+        />
+        <StatCard
+          label="Sales"
+          value={data.sales.toLocaleString('en-US')}
+          changePct={data.salesChangePct}
+          icon={<CartIcon />}
+          testId="stat-sales"
+        />
+        <StatCard
+          label="New Customers"
+          value={data.newCustomers.toLocaleString('en-US')}
+          changePct={data.newCustomersChangePct}
+          icon={<UsersIcon />}
+          testId="stat-customers"
+        />
+        <StatCard
+          label="Products Sold"
+          value={data.unitsSold.toLocaleString('en-US')}
+          changePct={data.unitsSoldChangePct}
+          icon={<BoxIcon />}
+          testId="stat-units"
+        />
+      </div>
+
+      {/* ------------------------------------------------------------ charts */}
+      <div className="grid gap-4 xl:grid-cols-3">
+        <Card className="xl:col-span-2">
+          <CardContent className="p-6">
+            <h2 className="text-base font-semibold">Revenue Overview</h2>
+            <p className="mt-0.5 text-sm text-muted-foreground">
+              Revenue for the last 6 months
+            </p>
+            <div className="mt-6 h-[320px]">
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={data.revenueByMonth} margin={{ top: 4, right: 8, left: 0, bottom: 0 }}>
+                  <CartesianGrid strokeDasharray="4 4" stroke="#e5e7eb" vertical={false} />
+                  <XAxis dataKey="month" stroke="#9ca3af" fontSize={13} tickLine={false} axisLine={false} />
+                  <YAxis
+                    stroke="#9ca3af"
+                    fontSize={13}
+                    tickLine={false}
+                    axisLine={false}
+                    width={48}
+                    // Minor units are rupees-times-100, which would label the axis in paisa.
+                    tickFormatter={(v: number) => (v / 100).toLocaleString('en-US')}
+                  />
+                  <Tooltip
+                    cursor={{ fill: 'rgba(0,0,0,0.04)' }}
+                    formatter={(v: number) => [`Rs. ${(v / 100).toLocaleString('en-US', { minimumFractionDigits: 2 })}`, 'Revenue']}
+                  />
+                  <Bar dataKey="amountMinor" name="Revenue" fill={SERIES[0]} radius={[3, 3, 0, 0]} />
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+          </CardContent>
+        </Card>
+
+        <TrafficSourcesCard />
+      </div>
+
+      {/* ------------------------------------------------------------ sales trend */}
+      <Card>
+        <CardContent className="p-6">
+          <h2 className="text-base font-semibold">Sales Trend</h2>
+          <p className="mt-0.5 text-sm text-muted-foreground">Monthly sales performance</p>
+          <div className="mt-6 h-[300px]">
+            <ResponsiveContainer width="100%" height="100%">
+              <AreaChart data={data.salesByMonth} margin={{ top: 4, right: 8, left: 0, bottom: 0 }}>
+                <defs>
+                  <linearGradient id="salesFill" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%" stopColor={SERIES[0]} stopOpacity={0.35} />
+                    <stop offset="100%" stopColor={SERIES[0]} stopOpacity={0.02} />
+                  </linearGradient>
+                </defs>
+                <CartesianGrid strokeDasharray="4 4" stroke="#e5e7eb" vertical={false} />
+                <XAxis dataKey="month" stroke="#9ca3af" fontSize={13} tickLine={false} axisLine={false} />
+                <YAxis stroke="#9ca3af" fontSize={13} tickLine={false} axisLine={false} width={40} />
+                <Tooltip formatter={(v: number) => [`${v} orders`, 'Sales']} />
+                <Area
+                  type="monotone"
+                  dataKey="orders"
+                  name="Sales"
+                  stroke={SERIES[0]}
+                  strokeWidth={2}
+                  fill="url(#salesFill)"
+                  dot={{ r: 4, fill: SERIES[0] }}
+                />
+              </AreaChart>
+            </ResponsiveContainer>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* ------------------------------------------------------------ action list */}
+      <div className="grid gap-4 md:grid-cols-3">
+        <StatCard label="Open orders" value={String(data.openOrders)} icon={<CartIcon />} testId="stat-open-orders" />
+        <StatCard label="Low stock variants" value={String(data.lowStockVariants)} icon={<BoxIcon />} testId="stat-low-stock" />
+        <StatCard
+          label="Catalogue"
+          value={`${data.publishedProducts} live · ${data.draftProducts} draft`}
+          icon={<span className="text-lg">#</span>}
+          testId="stat-catalogue"
+        />
+      </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------- pieces
+
+function StatCard({
+  label,
+  value,
+  changePct,
+  icon,
+  testId,
+}: {
+  label: string;
+  value: string;
+  changePct?: number | null;
+  icon: React.ReactNode;
+  testId?: string;
+}) {
+  return (
+    <Card data-testid={testId}>
+      <CardContent className="p-6">
+        <div className="flex items-start justify-between">
+          <p className="text-sm text-muted-foreground">{label}</p>
+          <span className="text-muted-foreground">{icon}</span>
+        </div>
+        <p className="mt-3 text-3xl font-semibold tracking-tight">{value}</p>
+        {changePct !== undefined ? <Trend changePct={changePct} /> : null}
+      </CardContent>
+    </Card>
+  );
+}
+
+/**
+ * The change chip.
+ *
+ * <p>Renders nothing rather than "0%" when there is no previous period. "0%" would assert no
+ * change, and there is no data to have changed from.
+ */
+function Trend({ changePct }: { changePct: number | null }) {
+  if (changePct === null || changePct === undefined) {
+    return <p className="mt-3 text-xs text-muted-foreground">No previous period to compare</p>;
+  }
+  const up = changePct >= 0;
+  return (
+    <p className="mt-3 flex items-center gap-2 text-xs text-muted-foreground">
+      <span
+        className={
+          up
+            ? 'rounded-md bg-neutral-900 px-2 py-1 font-medium text-white'
+            : 'rounded-md bg-red-50 px-2 py-1 font-medium text-red-700'
+        }
+      >
+        {up ? '↗' : '↘'} {up ? '+' : ''}
+        {changePct.toFixed(1)}%
+      </span>
+      from last month
+    </p>
+  );
+}
+
+/**
+ * Traffic sources, shown honestly as unavailable.
+ *
+ * <p>The reference renders a donut here. Nothing in this platform records where a visitor came
+ * from, so those percentages would have to be invented — and a chart of plausible numbers is
+ * more persuasive than a missing one, which is exactly why an owner would make a marketing
+ * decision on it. The card keeps its place so the layout matches, and says what is missing.
+ */
+function TrafficSourcesCard() {
+  return (
+    <Card>
+      <CardContent className="p-6">
+        <h2 className="text-base font-semibold">Traffic Sources</h2>
+        <p className="mt-0.5 text-sm text-muted-foreground">Visitor distribution by source</p>
+        <div className="mt-6 flex h-[260px] flex-col items-center justify-center rounded-lg border border-dashed p-6 text-center">
+          <p className="text-sm font-medium">Not tracked yet</p>
+          <p className="mt-1 max-w-xs text-xs text-muted-foreground">
+            This platform does not record where a visitor came from. Rather than show invented
+            percentages, the card stays empty until traffic tracking exists.
+          </p>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+function DashboardSkeleton() {
+  return (
+    <div className="space-y-6">
+      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+        {Array.from({ length: 4 }, (_, i) => (
+          <Skeleton key={i} className="h-32 rounded-xl" />
+        ))}
+      </div>
+      <Skeleton className="h-[420px] rounded-xl" />
+    </div>
+  );
+}
+
+// Small inline glyphs, so the KPI icons match the reference without a second icon set.
+const CartIcon = () => (
+  <svg viewBox="0 0 24 24" className="size-5" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden>
+    <path d="M3 4h2l2.4 10.5a2 2 0 0 0 2 1.5h7.7a2 2 0 0 0 2-1.5L21 8H6" strokeLinecap="round" strokeLinejoin="round" />
+    <circle cx="10" cy="20" r="1.3" />
+    <circle cx="18" cy="20" r="1.3" />
+  </svg>
+);
+const UsersIcon = () => (
+  <svg viewBox="0 0 24 24" className="size-5" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden>
+    <circle cx="9" cy="8" r="3" />
+    <path d="M3 19a6 6 0 0 1 12 0M17 11a2.6 2.6 0 1 0 0-5.2M17.5 19H21a5 5 0 0 0-3.2-4.6" strokeLinecap="round" />
+  </svg>
+);
+const BoxIcon = () => (
+  <svg viewBox="0 0 24 24" className="size-5" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden>
+    <path d="M12 2.8 20.5 7v10L12 21.2 3.5 17V7L12 2.8Z" strokeLinejoin="round" />
+    <path d="M3.5 7 12 11.3 20.5 7M12 11.3V21.2" strokeLinejoin="round" />
+  </svg>
+);
