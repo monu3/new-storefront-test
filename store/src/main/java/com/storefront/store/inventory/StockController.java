@@ -51,6 +51,7 @@ import lombok.RequiredArgsConstructor;
 public class StockController {
 
 	private final InventoryService inventory;
+	private final InventoryCsvService inventoryCsv;
 	private final ProductService products;
 	private final TenantGuard tenantGuard;
 	private final CurrentUser currentUser;
@@ -153,6 +154,63 @@ public class StockController {
 				"last", result.isLast()));
 	}
 
+	// ------------------------------------------------------------------ CSV
+
+	/**
+	 * Exports every variant with its stock, as a downloadable file.
+	 *
+	 * <p>{@code quantity} is the <em>available</em> figure, not on-hand: that is what an owner
+	 * checks against a shelf, and exporting on-hand would show stock already promised to a
+	 * customer. Drafts and archived products are included, because an export the owner cannot
+	 * re-import is worse than no export.
+	 */
+	@GetMapping("/export.csv")
+	@Operation(summary = "Export stock as CSV",
+			description = "Editable and re-importable. quantity is available (on hand minus reserved).")
+	public ResponseEntity<byte[]> exportCsv() {
+		Shop shop = tenantGuard.requireOwnedShop();
+		byte[] csv = inventoryCsv.exportCsv(shop).getBytes(java.nio.charset.StandardCharsets.UTF_8);
+
+		return ResponseEntity.ok()
+				.header("Content-Type", "text/csv; charset=UTF-8")
+				.header("Content-Disposition",
+						"attachment; filename=inventory.csv")
+				.body(csv);
+	}
+
+	/**
+	 * Imports stock from a pasted CSV.
+	 *
+	 * <p>Pasted rather than multipart-uploaded, because the file is small (a few hundred rows) and
+	 * a paste works identically from a phone — which is how a shop owner will actually have the
+	 * spreadsheet in front of them.
+	 *
+	 * <p>Every row is reported. A bad row never aborts the rest, so an owner with 3 bad rows in
+	 * 200 has 197 applied and a precise list of what to fix.
+	 */
+	@PostMapping("/import")
+	@Operation(summary = "Import stock from pasted CSV",
+			description = "Every row is reported. Default operation is ADD; SET overwrites and must be asked for.")
+	public InventoryCsvService.ImportResult importCsv(@Valid @RequestBody CsvImportRequest request) {
+		Shop shop = tenantGuard.requireOwnedShop();
+		return inventoryCsv.importCsv(shop, request.csv(), request.operation());
+	}
+
+	/** A template, so an owner can see the expected format instead of guessing. */
+	@GetMapping("/import-template.csv")
+	@Operation(summary = "A sample CSV showing the expected columns")
+	public ResponseEntity<byte[]> importTemplate() {
+		String template = """
+				sku,variant_name,product_name,category,quantity,operation,price
+				RICE-5,5kg,Organic Rice,RICE,25,ADD,45000
+				,"1kg",Organic Rice,RICE,10,ADD,12000
+				""";
+		return ResponseEntity.ok()
+				.header("Content-Type", "text/csv; charset=UTF-8")
+				.header("Content-Disposition", "attachment; filename=inventory-template.csv")
+				.body(template.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+	}
+
 	// ------------------------------------------------------------------ helpers
 
 	/**
@@ -223,6 +281,12 @@ public class StockController {
 			int available,
 			int lowStockThreshold,
 			boolean lowStock) {
+	}
+
+	public record CsvImportRequest(
+			@NotNull @Size(max = 2_000_000) String csv,
+			/** Defaults to ADD. SET overwrites the count and must be chosen explicitly. */
+			InventoryCsvService.Operation operation) {
 	}
 
 	public record MovementView(

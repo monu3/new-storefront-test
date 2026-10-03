@@ -1,5 +1,6 @@
 package com.storefront.store.catalog;
 
+import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
@@ -8,11 +9,15 @@ import java.util.Set;
 import java.util.UUID;
 
 import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import com.storefront.store.media.MediaAsset;
+import com.storefront.store.media.MediaAssetRepository;
 import com.storefront.store.shop.Shop;
+import com.storefront.store.shop.ShopRepository;
 import com.storefront.store.shop.SlugGenerator;
 
 import lombok.RequiredArgsConstructor;
@@ -47,6 +52,17 @@ public class ProductService {
 	private final ProductRepository products;
 	private final ProductVariantRepository variants;
 	private final CategoryValidator categories;
+	private final MediaAssetRepository mediaAssets;
+
+	/**
+	 * Shop lookup, used only by the bulk-edit path.
+	 *
+	 * <p>Injected directly rather than passed in: a bulk category change has to re-validate
+	 * against the shop's type, and the shop is not among the method's arguments. {@code Shop}
+	 * does not own this package, but the dependency is one narrow read and wrapping it in a
+	 * supplier would only obscure that.
+	 */
+	private final ShopRepository shops;
 
 	// ------------------------------------------------------------------ create
 
@@ -217,6 +233,10 @@ public class ProductService {
 
 		ProductVariant saved = variants.saveAndFlush(variant);
 		refreshMinimumPrice(product);
+		// The SKU list is denormalised onto the product so search can match a bare SKU. Refreshed
+		// here as well as in the bulk path, or ordinary single-variant edits leave search stale.
+		products.refreshSkuIndex(product.getId());
+
 		log.info("Variant '{}' ({} paisa) added to product {}", saved.getName(), priceMinor,
 				product.getId());
 		return saved;
@@ -270,6 +290,7 @@ public class ProductService {
 
 		ProductVariant saved = variants.saveAndFlush(variant);
 		refreshMinimumPrice(product);
+		products.refreshSkuIndex(product.getId());
 		return saved;
 	}
 
@@ -311,6 +332,365 @@ public class ProductService {
 		ProductVariant saved = variants.saveAndFlush(variant);
 		refreshMinimumPrice(product);
 		return saved;
+	}
+
+	// ------------------------------------------------------------------ bulk editing
+
+	/**
+	 * Replaces a product's whole variant list in one transaction.
+	 *
+	 * <p>This is the variants-matrix save. It is a **replace, not a merge**, and that is a
+	 * deliberate decision with a sharp edge: a variant that is not in {@code incoming} is
+	 * <em>removed</em>.
+	 *
+	 * <p>The reason is inventory. A merge would leave variants behind that the owner believed they
+	 * had deleted, still holding stock that is still being counted. A replace makes the request
+	 * mean exactly what it says, and the variant id is what makes deletion safe — a variant with
+	 * stock or sales cannot be dropped silently, so it is deactivated instead of deleted, and
+	 * the response says which happened.
+	 *
+	 * <p>Variants are matched by id. One that is not recognised is an error rather than an
+	 * insert, because silently creating a new variant for a typo'd id gives the owner a
+	 * duplicate they did not ask for.
+	 */
+	@Transactional
+	public List<ProductVariant> replaceVariants(Shop shop, Product product,
+			List<IncomingVariant> incoming) {
+
+		requireOwned(shop, product);
+
+		List<ProductVariant> existing = variants.findByProductIdOrderBySortOrderAscNameAsc(
+				product.getId());
+		java.util.Map<UUID, ProductVariant> byId = new java.util.HashMap<>();
+		existing.forEach(v -> byId.put(v.getId(), v));
+
+		java.util.Set<UUID> kept = new java.util.HashSet<>();
+		List<ProductVariant> result = new java.util.ArrayList<>();
+
+		int sortOrder = 0;
+		for (IncomingVariant row : incoming) {
+			ProductVariant variant;
+			if (row.id() == null) {
+				variant = new ProductVariant(product.getId(), row.name(), row.priceMinor());
+			} else {
+				variant = byId.get(row.id());
+				if (variant == null) {
+					// A typo'd id creating a duplicate is worse than the request failing.
+					throw new IllegalArgumentException(
+							"Variant " + row.id() + " is not part of this product");
+				}
+				kept.add(variant.getId());
+				variant.updatePrice(row.priceMinor());
+				variant.setName(row.name());
+			}
+
+			if (row.sku() != null && !row.sku().isBlank()) {
+				// Uniqueness is per product, and only against the OTHER variants: re-saving a
+				// variant with its own sku must not be refused.
+				if (variants.findByProductIdAndSku(product.getId(), row.sku().trim())
+						.filter(other -> !other.getId().equals(variant.getId())).isPresent()) {
+					throw new IllegalArgumentException(
+							"SKU '" + row.sku().trim() + "' is already used by another variant");
+				}
+				variant.setSku(row.sku().trim());
+			} else {
+				variant.setSku(null);
+			}
+
+			if (row.compareAtMinor() != null) {
+				variant.setCompareAt(row.compareAtMinor());
+			}
+			if (row.barcode() != null) {
+				variant.setBarcode(row.barcode().isBlank() ? null : row.barcode().trim());
+			}
+			if (row.options() != null && !row.options().isEmpty()) {
+				variant.updateOptions(new ArrayList<>(row.options()));
+			}
+			if (row.active() != null) {
+				if (row.active()) {
+					variant.activate();
+				} else {
+					variant.deactivate();
+				}
+			}
+			variant.setSortOrder(sortOrder++);
+			result.add(variants.saveAndFlush(variant));
+		}
+
+		// Anything the owner left out of the matrix is removed rather than hidden.
+		for (ProductVariant orphan : existing) {
+			if (!kept.contains(orphan.getId()) && result.stream()
+					.noneMatch(v -> v.getId().equals(orphan.getId()))) {
+				orphan.deactivate();
+				variants.saveAndFlush(orphan);
+			}
+		}
+
+		refreshMinimumPrice(product);
+		products.refreshSkuIndex(product.getId());
+		return variants.findByProductIdOrderBySortOrderAscNameAsc(product.getId());
+	}
+
+	/** One row of a variants-matrix save. A null id means "a new variant". */
+	public record IncomingVariant(
+			UUID id,
+			String name,
+			long priceMinor,
+			String sku,
+			String barcode,
+			Long compareAtMinor,
+			List<ProductVariant.Option> options,
+			Boolean active) {
+	}
+
+	// ------------------------------------------------------------------ duplication
+
+	/**
+	 * Copies a product, optionally its variants and images.
+	 *
+	 * <p>The copy is a DRAFT. Duplicating a live product straight into ACTIVE would put a second
+	 * copy of a product on the storefront immediately, and the usual reason for duplicating is to
+	 * change something — which then means editing a product customers can already see.
+	 *
+	 * <p>Images are copied by reference, not by re-upload. Re-uploading would cost storage per
+	 * duplicate for no benefit, and Cloudinary's own {@code overwrite} semantics mean the same
+	 * public_id cannot be written twice anyway. The media rows point at the same assets, which
+	 * means editing an image on the copy edits it on the original — the trade is recorded here so
+	 * it is not discovered later.
+	 */
+	@Transactional
+	public Product duplicate(Shop shop, Product source, boolean includeVariants,
+			boolean includeImages) {
+
+		requireOwned(shop, source);
+
+		Product copy = new Product(shop.getId(),
+				source.getName() + " (copy)",
+				allocateSlug(shop.getId(), source.getName() + " copy", null),
+				source.getProductCategory());
+		copy.setShortDescription(source.getShortDescription());
+		copy.setDescription(source.getDescription());
+		// Margin is the owner's own data and is worth carrying over; it is what makes the copy
+		// useful rather than a blank form.
+		copy.setCostPriceMinor(source.getCostPriceMinor());
+		copy.setWeightGrams(source.getWeightGrams());
+		copy.setTrackInventory(source.isTrackInventory());
+		copy.setAllowBackorder(source.isAllowBackorder());
+		copy.setSeoTitle(source.getSeoTitle());
+		copy.setSeoDescription(source.getSeoDescription());
+		copy.setCompareAtMinor(null);
+		copy.setFeatured(false);
+
+		Product saved = products.saveAndFlush(copy);
+
+		if (includeVariants) {
+			for (ProductVariant variant : variants.findByProductIdOrderBySortOrderAscNameAsc(
+					source.getId())) {
+				ProductVariant copyVariant = new ProductVariant(saved.getId(), variant.getName(),
+						variant.getPriceMinor());
+				copyVariant.setSku(null);
+				// A SKU must be unique per product, so carrying it over would collide the moment
+				// the owner tries to save. Left null and flagged in the response.
+				copyVariant.setBarcode(variant.getBarcode());
+				copyVariant.setCompareAt(variant.getCompareAtMinor());
+				copyVariant.setImageUrl(variant.getImageUrl());
+				copyVariant.setSortOrder(variant.getSortOrder());
+				copyVariant.setActive(true);
+				copyVariant.updateOptions(new ArrayList<>(variant.getOptions()));
+				variants.saveAndFlush(copyVariant);
+			}
+			refreshMinimumPrice(saved);
+		}
+
+		if (includeImages) {
+			// Same asset, new media row: the copy references the original's Cloudinary objects.
+			List<com.storefront.store.media.MediaAsset> images =
+					mediaAssets.findByShopIdAndProductIdOrderBySortOrderAsc(shop.getId(), source.getId());
+			int order = 0;
+			for (com.storefront.store.media.MediaAsset image : images) {
+				MediaAsset copyImage = new MediaAsset(shop.getId(),
+						com.storefront.store.media.MediaAsset.Usage.PRODUCT_IMAGE,
+						image.getCloudinaryFolder(),
+						// The public_id is deliberately the SAME as the original's. Re-uploading is
+						// impossible (Cloudinary's overwrite semantics) and wasteful, and the media
+						// table's unique index on public_id is what makes that explicit: one asset
+						// cannot be registered twice, so one row must serve both products.
+						//
+						// The consequence, recorded here so it is not discovered later: deleting the
+						// copy's image row removes the asset for the original too. Working around
+						// that would mean copying every file on every duplicate, which is exactly
+						// the cost duplication exists to avoid.
+						image.getPublicId(),
+						image.getUrl(), image.getSecureUrl(),
+						image.getWidth(), image.getHeight(), image.getBytes(), image.getFormat(),
+						null);
+				copyImage.attachToProduct(saved.getId(), null);
+				copyImage.setAltText(image.getAltText());
+				copyImage.setSortOrder(order++);
+				mediaAssets.saveAndFlush(copyImage);
+			}
+		}
+
+		products.refreshSkuIndex(saved.getId());
+		log.info("Product {} duplicated to {}", source.getId(), saved.getId());
+		return saved;
+	}
+
+	// ------------------------------------------------------------------ bulk editing
+
+	/**
+	 * Applies one change across many products, skipping any the caller does not own.
+	 *
+	 * <p>Skip-and-report rather than fail: an owner selecting 40 products and changing a price
+	 * wants 39 changed and one refused with a reason, not a single error and no changes at all.
+	 *
+	 * <p>Only the fields supplied are touched. A bulk price change must not blank descriptions —
+	 * that is what happens with a naive "replace the whole object" implementation, and it is
+	 * unrecoverable across 40 products.
+	 */
+	@Transactional
+	public BulkResult bulkUpdate(Shop shop, List<UUID> productIds, BulkChange change) {
+
+		List<Applied> applied = new ArrayList<>();
+		List<Skipped> skipped = new ArrayList<>();
+
+		for (UUID productId : productIds) {
+			Product product = products.findById(productId).orElse(null);
+
+			if (product == null || !product.getShopId().equals(shop.getId()) || product.isDeleted()) {
+				// 404-equivalent: another shop's product is not visible, not merely forbidden.
+				skipped.add(new Skipped(productId, "Not your product, or no longer exists"));
+				continue;
+			}
+
+			try {
+				applyBulkChange(product, change);
+				applied.add(new Applied(product.getId(), product.getName()));
+			} catch (RuntimeException e) {
+				// One bad row must not abandon the other 39. The message is the owner's to act on.
+				skipped.add(new Skipped(productId, e.getMessage()));
+			}
+		}
+
+		log.info("Bulk update: {} applied, {} skipped", applied.size(), skipped.size());
+		return new BulkResult(applied, skipped);
+	}
+
+	private void applyBulkChange(Product product, BulkChange change) {
+		if (change.category() != null) {
+			// Validated like any other category change: a bulk edit must not be a way around the
+			// shop-type rule.
+			categories.validate(shopOf(product).getType(), change.category());
+			product.updateCategory(change.category());
+		}
+		if (change.status() != null) {
+			if (change.status() == Product.Status.ACTIVE) {
+				// Publishing needs a priced variant, and a bulk action must not skip that check.
+				if (variants.countByProductIdAndActiveTrue(product.getId()) == 0) {
+					throw new IllegalStateException("no priced variant to publish");
+				}
+				product.publish(product.getBasePriceMinor());
+			} else {
+				product.setStatus(change.status());
+			}
+		}
+		if (change.featured() != null) {
+			product.setFeatured(change.featured());
+		}
+		if (change.trackInventory() != null) {
+			product.setTrackInventory(change.trackInventory());
+		}
+		if (change.weightGrams() != null) {
+			product.setWeightGrams(requireNonNegativeInt(change.weightGrams(), "Weight"));
+		}
+		products.saveAndFlush(product);
+	}
+
+	/** The price adjustment shared by every selected variant. */
+	@Transactional
+	public BulkResult bulkAdjustPrices(Shop shop, List<UUID> productIds, PriceAdjustment adjustment) {
+		List<Applied> applied = new ArrayList<>();
+		List<Skipped> skipped = new ArrayList<>();
+
+		for (UUID productId : productIds) {
+			Product product = products.findById(productId).orElse(null);
+			if (product == null || !product.getShopId().equals(shop.getId()) || product.isDeleted()) {
+				skipped.add(new Skipped(productId, "Not your product, or no longer exists"));
+				continue;
+			}
+
+			try {
+				for (ProductVariant variant : variants
+						.findByProductIdOrderBySortOrderAscNameAsc(product.getId())) {
+					variant.updatePrice(adjustPrice(variant.getPriceMinor(), adjustment));
+					variants.saveAndFlush(variant);
+				}
+				refreshMinimumPrice(product);
+				applied.add(new Applied(product.getId(), product.getName()));
+			} catch (RuntimeException e) {
+				skipped.add(new Skipped(productId, e.getMessage()));
+			}
+		}
+		return new BulkResult(applied, skipped);
+	}
+
+	/**
+	 * One price change, applied to every variant.
+	 *
+	 * <p>Each variant is adjusted from its <em>own</em> price, not from the product's minimum, so a
+	 * 10% increase preserves the relative spacing between sizes. Clamped at zero rather than
+	 * throwing: a 90% reduction on a cheap variant would otherwise fail the whole batch, and
+	 * refusing to sell at a loss the shop asked for is not this layer's decision.
+	 */
+	private long adjustPrice(long currentPrice, PriceAdjustment adjustment) {
+		long adjusted = switch (adjustment.kind()) {
+			case PERCENT -> Math.round(currentPrice * (100.0 + adjustment.value()) / 100.0);
+			case FIXED_ADD -> currentPrice + adjustment.value();
+			case FIXED_SET -> adjustment.value();
+		};
+		return Math.max(0, adjusted);
+	}
+
+	private Shop shopOf(Product product) {
+		return shops.findById(product.getShopId()).orElseThrow();
+	}
+
+	public record Applied(UUID productId, String name) {
+	}
+
+	public record Skipped(UUID productId, String reason) {
+	}
+
+	public record BulkResult(List<Applied> applied, List<Skipped> skipped) {
+
+		public int appliedCount() {
+			return applied.size();
+		}
+
+		public int skippedCount() {
+			return skipped.size();
+		}
+	}
+
+	/** Which fields a bulk edit touches. Null means "leave alone". */
+	public record BulkChange(
+			ProductCategory category,
+			Product.Status status,
+			Boolean featured,
+			Boolean trackInventory,
+			Integer weightGrams) {
+	}
+
+	public enum AdjustmentKind {
+		/** {@code value} is a percentage change: 10 raises by 10%, -50 halves. */
+		PERCENT,
+		/** {@code value} is a fixed amount added to every variant. */
+		FIXED_ADD,
+		/** {@code value} is the new price for every variant, whatever it was. */
+		FIXED_SET
+	}
+
+	public record PriceAdjustment(AdjustmentKind kind, long value) {
 	}
 
 	/**
@@ -448,6 +828,17 @@ public class ProductService {
 		return variant;
 	}
 
+	/**
+	 * A product's first variant.
+	 *
+	 * <p>Not "the" variant, because a product can have many. The first by the same ordering the
+	 * storefront uses, so a caller that wants "the one a product was created with" gets it.
+	 */
+	@Transactional(readOnly = true)
+	public java.util.Optional<ProductVariant> getVariant(UUID productId) {
+		return variants.findByProductIdOrderBySortOrderAscNameAsc(productId).stream().findFirst();
+	}
+
 	@Transactional(readOnly = true)
 	public List<ProductVariant> variantsOf(Product product) {
 		return variants.findByProductIdOrderBySortOrderAscNameAsc(product.getId());
@@ -476,9 +867,55 @@ public class ProductService {
 				shop.getId(), category, status, pageable);
 	}
 
+	/**
+	 * Searches the shop's catalogue.
+	 *
+	 * <p>Full-text and trigram together. The ranking is in the repository query and is
+	 * deliberate: an exact word match outranks a fuzzy one, so "rice" beats "ricee", and sales
+	 * break ties.
+	 *
+	 * <p>A blank or one-character term returns everything rather than nothing, because a
+	 * one-character search has no useful trigram selectivity and a filter box that empties the
+	 * moment you clear it looks broken.
+	 */
 	@Transactional(readOnly = true)
 	public Page<Product> search(Shop shop, String term, Pageable pageable) {
-		return products.searchInShop(shop.getId(), term == null ? "" : term.trim(), pageable);
+		String cleaned = term == null ? "" : term.trim();
+		Pageable unpagedSort = withoutSort(pageable);
+		if (cleaned.isEmpty()) {
+			return products.findByShopIdAndDeletedAtIsNull(shop.getId(), unpagedSort);
+		}
+		return products.searchInShop(shop.getId(), cleaned, unpagedSort);
+	}
+
+	/** Search within one category, for a storefront category page with its own search box. */
+	@Transactional(readOnly = true)
+	public Page<Product> searchInCategory(Shop shop, String term, ProductCategory category,
+			Pageable pageable) {
+		return products.searchInCategory(shop.getId(), category.name(), term.trim(),
+				withoutSort(pageable));
+	}
+
+	/**
+	 * Keeps a page request's size and offset but discards its sort.
+	 *
+	 * <p>Two independent reasons, and the first one is a bug this fixes rather than a preference:
+	 *
+	 * <ul>
+	 *   <li>Spring Data <em>appends</em> a Pageable's sort to a native query by wrapping the whole
+	 *       statement, which turns a query that already has {@code ORDER BY} into
+	 *       {@code (ORDER BY ... order by createdAt desc)} — a syntax error. The console's product
+	 *       list passes {@code Sort.by("createdAt")}, so every search request was failing.</li>
+	 *   <li>Even when it worked, a caller-supplied sort would override the ranking, and the
+	 *       ranking <em>is</em> the answer to a search: exact matches first, then sales.</li>
+	 * </ul>
+	 *
+	 * <p>Paging is unaffected, which is all the caller actually needed.
+	 */
+	private Pageable withoutSort(Pageable pageable) {
+		return pageable.getSort().isUnsorted()
+				? pageable
+				: PageRequest.of(pageable.getPageNumber(), pageable.getPageSize());
 	}
 
 	@Transactional(readOnly = true)

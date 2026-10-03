@@ -1465,13 +1465,16 @@ against :8080 with the correct role; the `storefront` database is provably untou
 
 ---
 
-### Phase 2 — Catalog and Inventory Depth (~2 weeks)
+### Phase 2 — Catalog and Inventory Depth (~2 weeks) — ✅ COMPLETE
 
 Product editor (images via the media table, variants matrix, bulk edit) · product listing filtered and grouped by `ProductCategory` · inventory with movements, low-stock alerts, CSV import/export · product search with Postgres FTS + trigram typo tolerance · SEO fields · product duplication · archive/restore · drafts.
 
 > **Removed from v1:** drag-order category management and sub-category creation. The category grid comes from the enum.
 
 **Exit:** a shop manages a 500-SKU catalog across its type's categories, including variants and stock adjustments, with every quantity change traceable.
+
+> **Status: complete.** Verified live against a 1,010-product catalogue; 5,604 tests green. See
+> Appendix N (decisions D56–D66 and the eleven bugs the phase found).
 
 ---
 
@@ -2941,3 +2944,211 @@ seeing rows another suite had committed.
 Product editor depth (images in the UI, variant matrix, bulk edit) · inventory CSV import/export ·
 Postgres FTS with trigram typo tolerance · SEO · duplication. The catalogue already carries every
 column these need.
+
+---
+
+## Appendix N — Phase 2 COMPLETE: catalogue and inventory depth
+
+**Status: Phase 2 complete.** Full suite: **5,604 tests, 0 failures, 0 skipped.**
+
+The exit criterion — *"a shop manages a 500-SKU catalog across its type's categories, including
+variants and stock adjustments, with every quantity change traceable"* — verified live against a
+1,010-product catalogue.
+
+### D56 — search is full-text AND trigram, because they fail differently
+
+Full-text answers `rice` and is fast, but an owner typing `paracetmol` — a common misspelling of
+paracetamol — gets nothing back and concludes the shop has no paracetamol. Trigrams match character
+sequences, so near-misses land. Both are needed: full-text alone is too strict, and trigram alone
+cannot help a two-character query because a 2-gram index has no useful selectivity there.
+
+Ranking is deliberate, and asserted:
+
+1. an exact word match outranks a fuzzy one (`rice` beats `ricee`)
+2. a **name** match outranks a description match (`setweight 'A'` vs `'B'`)
+3. sales break ties
+
+`websearch_to_tsquery('simple', …)` rather than `plainto_tsquery`, so `"quoted phrases"`, `*`
+prefixes and `-exclusions` work, and odd input never throws.
+
+**`'simple'` not `'english'`.** English stemming suits an English-only catalogue but mangles every
+non-Latin token — a Nepali or Hindi product name gets stemmed or dropped, and this platform sells
+across 19 verticals in a multilingual market. `'simple'` does no stemming, so it never destroys a
+token it does not understand; typo tolerance comes from trigram, which is language-agnostic.
+
+### D57 — SKU matching is exact, not fuzzy — and trigram was tried and was wrong
+
+Searching `SKU0042` found nothing while `SKU-0042` found the product: full text tokenises the first
+into one lexeme and the second into two.
+
+The obvious fix — trigram on the SKU list — **was wrong**, and the reason is worth recording.
+Every SKU shares the `SKU-` prefix, so the trigrams `{sku, ku-, u-0, -00}` are common to all of
+them and `similarity()` came out around **0.57 between any two SKUs**. Searching `SKU-0042X`
+returned all 1,000 products that have a SKU.
+
+**Codes are not words: they either match or they do not.** So `product.sku_search_key` holds the
+SKU list with every non-alphanumeric character stripped, and the query term is stripped the same
+way. `SKU0042` and `SKU-0042` both match; `SKU-0042X` matches nothing.
+
+### D58 — the search document is generated, and SKUs are denormalised onto the product
+
+`search_document` is a **generated** `tsvector` column, so it cannot drift from the columns it
+indexes. A trigger-maintained vector would need updating by every service that touches a name, and
+the one that forgets is invisible until a search is quietly wrong.
+
+The SKU list cannot be in a generated column — it lives on `product_variant` and a generated column
+cannot reference another table. It is denormalised onto `product` and refreshed by
+`refresh_product_sku` inside the same transaction as any variant write. Derived by a database
+function rather than passed in by callers, so no caller can get it wrong by forgetting.
+
+### D59 — search is two queries, because drafts are hidden from customers but not from owners
+
+`searchInShop` (the console) includes drafts and archived products; `searchInCategory` (the
+storefront) is `status = 'ACTIVE'` only. That is not an oversight — a shop owner looking for their
+own draft must find it. Drafts are hidden from *customers*, not from their owner.
+
+### D60 — CSV import is per-row, never all-or-nothing, and defaults to ADD
+
+An owner importing 500 SKUs who loses the whole file on row 137 ends up doing it by hand. Every row
+is applied independently and reported on. `ImportResult` carries `rows` (one per data row) and
+`errors` (whole-file problems, meaning nothing was imported at all).
+
+**`ADD` is the default, not `SET`.** A spreadsheet handed to a shop is almost always a supplier's
+delivery note; overwriting a stock count from one destroys it. `SET` is available because a
+stocktake genuinely needs it, but it must be chosen.
+
+**Import never creates products.** A CSV row naming an unknown SKU is an error, not an instruction
+to invent a catalogue.
+
+The parser is real RFC 4180, not `split(",")`. A product called `Rice, 5kg` would otherwise shift
+every later column and corrupt the whole import.
+
+**The header row is optional**, detected by looking for a `quantity` column rather than assumed to
+be row one. A spreadsheet written from scratch often begins with data, and rejecting it with
+"no quantity column" for a file that looks correct to its author is the worst outcome.
+
+**Formula-looking fields are neutralised.** A product legitimately named `=SUM(A1:A9)` is executed
+as a formula by Excel when the owner opens the export. Quoting alone does not prevent it; a leading
+`=`, `+`, `-` or `@` gets a `'` prefix. This is CSV injection.
+
+### D61 — CSV export writes on-hand, with reserved alongside
+
+**Exporting `available` (on hand − reserved) was tried first and is wrong**, and the round trip
+found it. `SET` writes on-hand, so re-importing an available figure silently understates stock by
+exactly the reserved amount, every time. `quantity` is therefore on-hand — which is also what a
+stocktake counts, since the reserved units are physically on the shelf.
+
+`reserved` is exported beside it, **read-only**. It is ignored on import: the reservation is the
+platform's to hold, and a column an owner can edit but that has no effect is a trap.
+
+Verified: **export → halve → import → export is byte-identical to the intended values**, 0 of 1,008
+mismatched.
+
+### D62 — a duplicate SKU is reported, not guessed at
+
+A SKU is unique per **product**, not per shop (the schema's choice, and a legitimate one). So two
+products in one shop can carry the same code.
+
+The import originally took the first match, which marked the row **applied** while quietly leaving
+the other variant untouched — and the owner trusts the summary. The lookup now returns up to two
+matches and the row is refused with "matches 2 variants in this shop. A SKU must be unique; rename
+one before importing."
+
+Verified live: importing 1,012 rows applied 1,007 and refused 5 — all of them duplicated variants
+with no SKU and an ambiguous name. Reported, not guessed.
+
+### D63 — CSV import is one indexed query per row, not O(products)
+
+The first implementation resolved a SKU by loading every product in the shop and then querying each
+one's variants. That is O(products) per row, so a 1,000-row import issued roughly a million queries
+**and did not finish**.
+
+Found by running the exit criterion itself, which is the argument for having one. Now a single
+indexed query joining variant to product, with indexes on `lower(sku)` and `lower(name)`.
+
+### D64 — bulk edits skip-and-report, and touch only what was supplied
+
+An owner selecting 40 products wants 39 changed and one refused with a reason, not an error and no
+changes. `BulkResult` carries `applied` and `skipped` with a reason each.
+
+Only supplied fields are touched. A bulk price change must not blank descriptions — which is what
+a naive "replace the whole object" implementation does, across 40 products, unrecoverably.
+
+A bulk **category** change is re-validated against the shop type. A bulk action must not be a way
+around the rule the single-product endpoint enforces.
+
+Each variant in a bulk price change is adjusted from **its own** price, so a +10% preserves the
+relative spacing between sizes. Clamped at zero rather than failing the batch: refusing to sell at
+a loss the shop explicitly asked for is not this layer's decision.
+
+### D65 — a duplicate is a draft with no SKUs; the variants matrix is a replace
+
+A duplicate is always **DRAFT**. Duplicating a live product straight to `ACTIVE` puts a second copy
+on the storefront before the owner has finished changing it — and the usual reason for duplicating
+is to change something.
+
+Variant SKUs are cleared, because a SKU is unique per product and carrying it over would collide on
+the first save. Compare-at price and featured are cleared too: a strike-through price copied onto a
+product that has just changed is a claim about the new product.
+
+The variants matrix is a **replace, not a merge**, and that has a sharp edge: a variant omitted
+from the request is **deactivated**. A merge would leave behind variants the owner believes they
+deleted, still holding counted stock. Variants are matched by id, and an unrecognised id is an
+error rather than an insert — silently creating a variant for a typo'd id gives a duplicate the
+owner did not ask for.
+
+### D66 — the storefront catalogue is grouped and capped, with the true total beside the shown count
+
+`/api/v1/p/shops/{slug}/catalogue` returns every category group in one request, because a grocery
+with six categories would otherwise be six round trips before the first product appeared.
+
+Capped at **12 products per group**. A storefront that renders 500 cards is unusable on a phone,
+and a customer scrolling past 500 products has already decided they are on the wrong shop. Each
+group carries `total` as well as `shown`, so the UI can say "showing 12 of 100" rather than
+implying 12 is all there is.
+
+Featured first, then best-selling — a storefront's job is to show what the shop most wants to sell
+above the fold, which is not the same as the newest products.
+
+### Bugs found while building this phase
+
+| # | Bug | Why it mattered |
+|---|---|---|
+| 1 | `refreshSkuIndex` declared `clearAutomatically` | Detached the product mid-method, so `refreshMinimumPrice` was silently ignored and tests read stale values. Only `flushAutomatically` is needed. |
+| 2 | Spring Data appends a `Pageable` sort to a native query by wrapping it | Produced `(ORDER BY … order by createdAt desc)` — a syntax error. Every search from the console's product list was failing. Fixed by dropping the sort (the ranking *is* the ordering). |
+| 3 | CSV import was O(products) per row | A 1,000-row import did not finish. The exit criterion caught it. |
+| 4 | `RETURNS void` function called via `SELECT` | JPA rejects it: "a result was returned when none was expected". The function is for the migration backfill; the live path writes the UPDATE inline. |
+| 5 | `SET p.column = …` in Postgres `UPDATE … AS p` | Postgres allows the alias but rejects a qualified target column. |
+| 6 | `sku_search_key` declared *after* the function that writes it | PL/pgSQL bodies are checked at runtime, so the migration "succeeded" then failed on first call. |
+| 7 | Trigram on the SKU list | Every SKU shares a prefix, so similarity was ~0.57 between any two and a bad query matched 1,000 products. |
+| 8 | Export wrote `available`, import `SET` wrote on-hand | Round trip silently lost the reserved amount every time. |
+| 9 | `restock(note)` accepted a note and dropped it | "Why did stock jump by 30 overnight" was unanswerable from the log — which is the log's whole purpose. |
+| 10 | `CategoryGroup` documented a `total` field it did not have | The UI could not show "12 of 100". |
+| 11 | `truncated()` is not a bean getter | Jackson omits it, so `truncated` was `undefined` in the client with no error anywhere. |
+
+### A note on `flyway:repair`
+
+`repair` updates a migration's stored checksum but **does not re-execute it**. So editing an
+applied migration and repairing leaves the schema at the old state while the file claims the new
+one, and the symptom is a misleading "column does not exist" at boot. The fix is to delete the row
+from `flyway_schema_history` and let it re-run — safe only because these migrations are written
+idempotently (`IF NOT EXISTS`, guarded `UPDATE`).
+
+Worth remembering for any future edit to V7.
+
+### Delivered in this appendix
+
+| Capability | Where |
+|---|---|
+| Full-text + trigram search, typo tolerant | `ProductRepository.searchInShop`, `CatalogSearchIT` |
+| SKU search, separator-insensitive | `product.sku_search_key`, V7 |
+| CSV import/export with per-row reporting | `InventoryCsvService`, `InventoryCsvServiceIT` |
+| Bulk field and price edits | `ProductService.bulkUpdate`, `bulkAdjustPrices` |
+| Product duplication | `ProductService.duplicate` |
+| Variants matrix (replace) | `ProductService.replaceVariants` |
+| Grouped public catalogue | `PublicProductController.catalogue` |
+| Low-stock list, shop-scoped | `StockController`, `findLowStockForShop` |
+
+### Still Phase 3
+
+Theme engine: section registry, zod schema, template marketplace, live preview, token system.

@@ -129,9 +129,17 @@ public class InventoryMovement {
 		return reason == Reason.SALE || reason == Reason.CANCEL;
 	}
 
-	public static InventoryMovement restock(UUID productId, UUID variantId, int units, UUID actor) {
+	/**
+	 * A restock, with the note the owner gave.
+	 *
+	 * <p>The note is optional but carried when present. "Delivered Tuesday", "returned from
+	 * supplier" and "counted wrong" are the difference between a movement log an owner trusts and
+	 * one they have to guess at.
+	 */
+	public static InventoryMovement restock(UUID productId, UUID variantId, int units, UUID actor,
+			String note) {
 		return new InventoryMovement(productId, variantId, Math.abs(units), Reason.RESTOCK,
-				"MANUAL", null, null, actor);
+				"MANUAL", null, note, actor);
 	}
 
 	public static InventoryMovement sale(UUID productId, UUID variantId, int units, UUID orderId) {

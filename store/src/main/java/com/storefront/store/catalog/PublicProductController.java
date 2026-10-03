@@ -1,6 +1,8 @@
 package com.storefront.store.catalog;
 
+import java.util.Comparator;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 import org.springframework.data.domain.PageRequest;
@@ -49,6 +51,9 @@ public class PublicProductController {
 	private static final int MAX_PAGE_SIZE = 60;
 
 	private static final int MAX_RELATED = 12;
+
+	/** Products returned per category group. A phone cannot usefully render more. */
+	private static final int MAX_PRODUCTS_PER_GROUP = 12;
 
 	private final ShopRepository shops;
 	private final ProductRepository products;
@@ -132,6 +137,54 @@ public class PublicProductController {
 	}
 
 	/**
+	 * The shop's catalogue, grouped by category.
+	 *
+	 * <p>One request returns everything a storefront needs to render its product pages: every
+	 * group, and within each group the products. Doing this per category would be one request per
+	 * category, and a grocery with six categories would be six round trips before the first
+	 * product appeared.
+	 *
+	 * <p>Bounded deliberately. A shop with 500 SKUs returns at most
+	 * {@link #MAX_PRODUCTS_PER_GROUP} per group, because a storefront that renders 500 cards at
+	 * once is unusable on a phone — and a customer scrolling past 500 products to find rice has
+	 * already decided they are on the wrong shop. The full catalogue is paginated by
+	 * {@link #list}.
+	 */
+	@GetMapping("/shops/{shopSlug}/catalogue")
+	@Operation(summary = "The whole catalogue, grouped by category",
+			description = "One request for every category group. Capped per group for phone rendering.")
+	public GroupedCatalogue catalogue(@PathVariable String shopSlug) {
+		Shop shop = requireVisibleShop(shopSlug);
+
+		var active = products.findByShopIdAndStatusAndDeletedAtIsNull(shop.getId(),
+				Product.Status.ACTIVE, Pageable.unpaged()).getContent();
+
+		// Featured first, then best-selling. A storefront's job is to show what the shop most
+		// wants to sell above the fold, and that is not the same as the newest products.
+		Map<ProductCategory, List<ProductSummary>> grouped = active.stream()
+				.sorted(Comparator
+						.comparingInt((Product p) -> p.isFeatured() ? 0 : 1)
+						.thenComparing(Comparator.comparingInt(Product::getSoldCount).reversed()))
+				.collect(java.util.stream.Collectors.groupingBy(
+						Product::getProductCategory,
+						java.util.stream.Collectors.collectingAndThen(
+								java.util.stream.Collectors.toList(),
+								list -> list.stream()
+										.limit(MAX_PRODUCTS_PER_GROUP)
+										.map(this::toSummary)
+										.toList())));
+
+		List<CategoryGroup> groups = grouped.entrySet().stream()
+				.map(e -> new CategoryGroup(e.getKey(), e.getKey().label(),
+						countIn(active, e.getKey()), e.getValue().size(), e.getValue()))
+				.sorted(Comparator.comparing(CategoryGroup::label))
+				.toList();
+
+		return new GroupedCatalogue(shop.getSlug(), shop.getName(),
+				shop.getFollowerCount(), groups, active.size());
+	}
+
+	/**
 	 * The categories this shop actually sells, with a count each.
 	 *
 	 * <p>Served from live products rather than the shop type's full allowed set: a shop with three
@@ -155,6 +208,11 @@ public class PublicProductController {
 	}
 
 	/** "Customers also bought" — Phase 5 does this properly; Phase 1 keeps the block populated. */
+	/** How many the shop really has in a category, so the UI can say "12 of 60". */
+	private int countIn(List<Product> products, ProductCategory category) {
+		return (int) products.stream().filter(p -> p.getProductCategory() == category).count();
+	}
+
 	private List<ProductSummary> relatedProducts(Shop shop, Product product) {
 		return products
 				.findByShopIdAndProductCategoryAndStatusAndDeletedAtIsNull(
@@ -239,6 +297,41 @@ public class PublicProductController {
 	}
 
 	public record CategoryCount(ProductCategory category, String label, long count) {
+	}
+
+	/**
+	 * One category and its products.
+	 *
+	 * @param total how many the shop actually has in this category, so the UI can say
+	 *              "showing 12 of 60" rather than implying that 12 is all there is
+	 * @param shown how many are included, which is less than {@code total} for a large category
+	 */
+	public record CategoryGroup(ProductCategory category, String label, int total, int shown,
+			List<ProductSummary> products) {
+
+		/**
+		 * True when the cap hid something, so the UI can offer "see all".
+		 *
+		 * <p>Named {@code isTruncated} rather than {@code truncated} because Jackson serialises a
+		 * record's components plus its {@code isX}/{@code getX} accessors — a bare
+		 * {@code truncated()} is silently absent from the JSON, which is the kind of thing that
+		 * only shows up as an undefined in the frontend.
+		 */
+		public boolean isTruncated() {
+			return shown < total;
+		}
+	}
+
+	/**
+	 * @param totalProducts across all groups, so a storefront can show a count without counting
+	 *                     the groups itself
+	 */
+	public record GroupedCatalogue(
+			String shopSlug,
+			String shopName,
+			int followerCount,
+			List<CategoryGroup> groups,
+			int totalProducts) {
 	}
 
 	/** Maps to HTTP 404, same as a missing product id: neither confirms nor denies by status. */

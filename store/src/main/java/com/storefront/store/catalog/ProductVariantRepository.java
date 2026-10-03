@@ -53,6 +53,53 @@ public interface ProductVariantRepository extends JpaRepository<ProductVariant, 
 
 	List<ProductVariant> findByIdIn(List<UUID> ids);
 
+	/**
+	 * A variant of this shop, by SKU.
+	 *
+	 * <p>One query, and the reason it exists is a performance bug: CSV import originally resolved
+	 * a SKU by loading every product in the shop and then querying each one's variants. That is
+	 * O(products) per CSV row, so importing 1,000 SKUs issued roughly a million queries and did not
+	 * finish. The Phase 2 exit criterion is a 500-SKU catalogue, which makes this the difference
+	 * between a feature that works and one that hangs.
+	 *
+	 * <p>Case-insensitive because SKUs get typed by hand and {@code sku-0042} is the same code as
+	 * {@code SKU-0042}.
+	 *
+	 * <p><b>Returns up to two matches, not one.</b> A SKU is unique per product, not per shop, so
+	 * two products in one shop can carry the same code — and when they do, a CSV import that
+	 * silently took the first would report the row as applied while quietly leaving the other
+	 * untouched. The importer checks the size and refuses the row with a reason the owner can
+	 * act on, which is honest; guessing is not. Found by the Phase 2 exit criterion against a
+	 * catalogue that had picked up duplicate SKUs.
+	 *
+	 * @return zero, one or two matches; two means the SKU is ambiguous in this shop
+	 */
+	@org.springframework.data.jpa.repository.Query(value = """
+			SELECT v.* FROM product_variant v
+			JOIN product p ON p.id = v.product_id
+			WHERE p.shop_id = :shopId
+			  AND p.deleted_at IS NULL
+			  AND lower(v.sku) = lower(:sku)
+			LIMIT 2
+			""", nativeQuery = true)
+	List<ProductVariant> findBySkuInShop(@Param("shopId") UUID shopId, @Param("sku") String sku);
+
+	/**
+	 * A variant of this shop, by name.
+	 *
+	 * <p>Same reason as {@link #findBySkuInShop}: a supplier's sheet may carry no SKU, and the
+	 * previous implementation loaded the whole catalogue to find one variant by name.
+	 */
+	@org.springframework.data.jpa.repository.Query(value = """
+			SELECT v.* FROM product_variant v
+			JOIN product p ON p.id = v.product_id
+			WHERE p.shop_id = :shopId
+			  AND p.deleted_at IS NULL
+			  AND lower(v.name) = lower(:name)
+			LIMIT 2
+			""", nativeQuery = true)
+	List<ProductVariant> findByNameInShop(@Param("shopId") UUID shopId, @Param("name") String name);
+
 	long countByProductIdAndActiveTrue(UUID productId);
 
 	/** For a shop-type change check: variants that exist even on an archived product. */

@@ -101,7 +101,10 @@ public class InventoryService {
 		}
 		Inventory row = openRow(productId, variantId);
 		row.adjustOnHand(units);
-		movements.save(InventoryMovement.restock(productId, variantId, units, actorUserId));
+		// The note travels with the movement. An earlier version accepted one here and dropped it,
+		// so "why did stock jump by 30 overnight" was unanswerable from the log — which is the
+		// whole reason the log exists.
+		movements.save(InventoryMovement.restock(productId, variantId, units, actorUserId, note));
 		log.info("Restocked {} x{} by {} units", variantId, productId, units);
 		return inventory.saveAndFlush(row);
 	}

@@ -3,6 +3,7 @@ package com.storefront.store.support;
 import java.util.UUID;
 
 
+import com.storefront.store.catalog.ProductVariant;
 import com.storefront.store.catalog.ShopType;
 import com.storefront.store.identity.AppUser;
 import com.storefront.store.identity.AppUserRepository;
@@ -27,13 +28,16 @@ public class TestFixtures {
 	private final com.storefront.store.catalog.ProductRepository productRepository;
 	private final com.storefront.store.catalog.ProductVariantRepository variantRepository;
 	private final com.storefront.store.inventory.InventoryRepository inventoryRepository;
+	private final com.storefront.store.catalog.ProductService productService;
 
 
 	public TestFixtures(AppUserRepository userRepository, ShopRepository shopRepository,
 			com.storefront.store.order.ShopOrderRepository orderRepository,
 			com.storefront.store.catalog.ProductRepository productRepository,
 			com.storefront.store.catalog.ProductVariantRepository variantRepository,
-			com.storefront.store.inventory.InventoryRepository inventoryRepository) {
+			com.storefront.store.inventory.InventoryRepository inventoryRepository,
+			com.storefront.store.catalog.ProductService productService) {
+		this.productService = productService;
 		this.inventoryRepository = inventoryRepository;
 		this.userRepository = userRepository;
 		this.shopRepository = shopRepository;
@@ -126,6 +130,45 @@ public class TestFixtures {
 			com.storefront.store.catalog.ProductCategory category, long priceMinor) {
 		return createProduct(createVerifiedShop("Fixture Shop " + UUID.randomUUID().toString().substring(0, 6),
 				ShopType.GROCERY), name, category, priceMinor);
+	}
+
+	/**
+	 * A product with a specific SKU on its first variant.
+	 *
+	 * <p>Search and CSV tests need to address a variant by its SKU, which is the only handle a
+	 * spreadsheet has.
+	 */
+	public com.storefront.store.catalog.ProductVariant createProductWithSku(Shop shop, String name,
+			com.storefront.store.catalog.ProductCategory category, long priceMinor, String sku) {
+
+		com.storefront.store.catalog.Product product =
+				createProduct(shop, name, category, priceMinor);
+		ProductVariant variant = defaultVariantOf(product);
+
+		if (sku != null) {
+			// Through the service, so the SKU index is refreshed the same way a real edit would.
+			// Variant setters are package-private to the catalog package on purpose, so a test
+			// cannot build a state the service would refuse to produce.
+			productService.updateVariant(shop, variant,
+					/* name */ null, /* price */ null, sku,
+					/* options */ null, /* barcode */ null, /* compareAt */ null,
+					/* sortOrder */ null, /* active */ null);
+			return productService.getVariant(product.getId()).orElseThrow();
+		}
+		return variant;
+	}
+
+	/**
+	 * Publishes a product and stocks its first variant.
+	 *
+	 * <p>The common starting point for catalogue tests: something that is visible and buyable.
+	 */
+	public com.storefront.store.catalog.Product liveProduct(Shop shop, String name,
+			com.storefront.store.catalog.ProductCategory category, long priceMinor, int units) {
+		com.storefront.store.catalog.Product product = createProduct(shop, name, category, priceMinor);
+		stock(defaultVariantOf(product), units);
+		productService.publish(shop, product);
+		return product;
 	}
 
 	/** The product created by {@link #createProduct}, so a test can get at its variant. */

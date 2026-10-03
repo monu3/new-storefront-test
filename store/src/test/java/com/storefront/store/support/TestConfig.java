@@ -21,9 +21,10 @@ public class TestConfig {
 			com.storefront.store.order.ShopOrderRepository orderRepository,
 			com.storefront.store.catalog.ProductRepository productRepository,
 			com.storefront.store.catalog.ProductVariantRepository productVariantRepository,
-			com.storefront.store.inventory.InventoryRepository inventoryRepository) {
+			com.storefront.store.inventory.InventoryRepository inventoryRepository,
+			com.storefront.store.catalog.ProductService productService) {
 		return new TestFixtures(userRepository, shopRepository, orderRepository,
-				productRepository, productVariantRepository, inventoryRepository);
+				productRepository, productVariantRepository, inventoryRepository, productService);
 	}
 
 	/**

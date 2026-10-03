@@ -13,6 +13,7 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
@@ -26,6 +27,7 @@ import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.NotEmpty;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
 import lombok.RequiredArgsConstructor;
@@ -198,6 +200,110 @@ public class ProductController {
 		Pageable pageable = PageRequest.of(page, Math.min(size, MAX_PAGE_SIZE),
 				Sort.by(Sort.Direction.DESC, "deletedAt"));
 		return PageResponse.from(products.deletedForShop(shop, pageable), ProductSummary::from);
+	}
+
+	/**
+	 * Search the shop's catalogue.
+	 *
+	 * <p>Full-text plus trigram together, so both "rice" and "paracetmol" find something. A search
+	 * box that returns nothing for a plausible spelling is worse than no search box at all: the
+	 * owner concludes their stock is not in the system.
+	 */
+	@GetMapping("/search")
+	@Operation(summary = "Search the catalogue",
+			description = "Full-text and trigram matching. Ranked: exact matches first, then sales.")
+	public PageResponse<ProductSummary> search(
+			@RequestParam @NotBlank @Size(max = 100) String q,
+			@RequestParam(required = false) ProductCategory category,
+			@RequestParam(defaultValue = "0") @Min(0) int page,
+			@RequestParam(defaultValue = "20") @Min(1) int size) {
+
+		Shop shop = tenantGuard.requireOwnedShop();
+		Pageable pageable = PageRequest.of(page, Math.min(size, MAX_PAGE_SIZE));
+
+		Page<Product> result = category == null
+				? products.search(shop, q, pageable)
+				: products.searchInCategory(shop, q, category, pageable);
+
+		return PageResponse.from(result, ProductSummary::from);
+	}
+
+	/**
+	 * Replaces a product's whole variant list.
+	 *
+	 * <p>A replace, not a merge, and that has a sharp edge worth reading before using: a variant
+	 * omitted from the matrix is deactivated. That is deliberate — a merge would leave behind
+	 * variants the owner believes they deleted, still holding counted stock — but it means the
+	 * request has to be the complete list.
+	 */
+	@PutMapping("/{productId}/variants")
+	@Operation(summary = "Replace the whole variant list",
+			description = "A variant left out of the request is deactivated, not silently kept.")
+	public List<ProductVariant.VariantView> replaceVariants(
+			@PathVariable UUID productId, @Valid @RequestBody List<@NotNull MatrixRow> matrix) {
+
+		Shop shop = tenantGuard.requireOwnedShop();
+		Product product = products.getOwned(shop, productId);
+
+		return products.replaceVariants(shop, product, matrix.stream()
+						.map(r -> new ProductService.IncomingVariant(r.id(), r.name(), r.price(),
+								r.sku(), r.barcode(), r.compareAt(), r.options(), r.active()))
+						.toList())
+				.stream().map(ProductVariant.VariantView::from).toList();
+	}
+
+	/**
+	 * Copies a product.
+	 *
+	 * <p>The copy is a draft and its variants have no SKUs, so a duplicated live product never
+	 * appears on the storefront before the owner has finished changing it, and cannot collide with
+	 * the original's SKUs when they do.
+	 */
+	@PostMapping("/{productId}/duplicate")
+	@Operation(summary = "Duplicate a product",
+			description = "The copy is a DRAFT. Variant SKUs are cleared, because SKUs are unique per product.")
+	public ProductResponse duplicate(@PathVariable UUID productId,
+			@RequestParam(defaultValue = "true") boolean variants,
+			@RequestParam(defaultValue = "true") boolean images) {
+
+		Shop shop = tenantGuard.requireOwnedShop();
+		Product product = products.getOwned(shop, productId);
+		Product copy = products.duplicate(shop, product, variants, images);
+		return ProductResponse.from(copy, products.variantsOf(copy));
+	}
+
+	/**
+	 * Applies one change to many products.
+	 *
+	 * <p>Skips and reports rather than failing: an owner selecting 40 products wants 39 changed
+	 * and one refused with a reason, not an error and no changes.
+	 */
+	@PostMapping("/bulk")
+	@Operation(summary = "Bulk-edit several products",
+			description = "Only the supplied fields are touched. Per-product failures are reported, not thrown.")
+	public BulkResponse bulk(@Valid @RequestBody BulkRequest request) {
+		Shop shop = tenantGuard.requireOwnedShop();
+
+		ProductService.BulkResult result = products.bulkUpdate(shop, request.productIds(),
+				new ProductService.BulkChange(request.category(), request.status(),
+						request.featured(), request.trackInventory(), request.weightGrams()));
+
+		return new BulkResponse(result.appliedCount(), result.skippedCount(),
+				result.applied(), result.skipped());
+	}
+
+	/** Bulk price change. Each variant is adjusted from its own price, so relative spacing holds. */
+	@PostMapping("/bulk/prices")
+	@Operation(summary = "Bulk-adjust prices across products",
+			description = "Percent, add, or set. Every variant is adjusted from its own price.")
+	public BulkResponse bulkPrices(@Valid @RequestBody BulkPriceRequest request) {
+		Shop shop = tenantGuard.requireOwnedShop();
+
+		ProductService.BulkResult result = products.bulkAdjustPrices(shop, request.productIds(),
+				new ProductService.PriceAdjustment(request.kind(), request.value()));
+
+		return new BulkResponse(result.appliedCount(), result.skippedCount(),
+				result.applied(), result.skipped());
 	}
 
 	/**
@@ -420,6 +526,47 @@ public class ProductController {
 	}
 
 	public record CategoryOption(String code, String label) {
+	}
+
+	/** One row of a variants-matrix save. A null id means "a new variant". */
+	public record MatrixRow(
+			UUID id,
+			@NotBlank @Size(max = 120) String name,
+			@NotNull @Min(0) Long price,
+			@Size(max = 64) String sku,
+			@Size(max = 64) String barcode,
+			@Min(1) Long compareAt,
+			List<ProductVariant.Option> options,
+			Boolean active) {
+	}
+
+	public record BulkRequest(
+			@NotEmpty List<UUID> productIds,
+			ProductCategory category,
+			Product.Status status,
+			Boolean featured,
+			Boolean trackInventory,
+			@Min(0) Integer weightGrams) {
+	}
+
+	public record BulkPriceRequest(
+			@NotEmpty List<UUID> productIds,
+			@NotNull ProductService.AdjustmentKind kind,
+			/** Percent: 10 raises by 10%, -50 halves. FIXED_ADD: an amount. FIXED_SET: the new price. */
+			long value) {
+	}
+
+	/**
+	 * The outcome of a bulk action.
+	 *
+	 * <p>{@code skipped} is part of the response rather than an error, so the console can show
+	 * "38 changed, 2 could not" with a reason for each.
+	 */
+	public record BulkResponse(
+			int appliedCount,
+			int skippedCount,
+			List<ProductService.Applied> applied,
+			List<ProductService.Skipped> skipped) {
 	}
 
 	/**

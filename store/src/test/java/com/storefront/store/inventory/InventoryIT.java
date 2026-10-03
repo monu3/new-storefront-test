@@ -98,6 +98,20 @@ class InventoryIT {
 		}
 
 		@Test
+		@DisplayName("a restock keeps the note the owner gave")
+		void restockKeepsNote() {
+			// The note is the difference between a log an owner trusts and one they guess at.
+			// It was accepted by the service and then dropped on the way to the movement.
+			inventory.restock(product.getId(), variant.getId(), 25, null, "delivered Tuesday");
+
+			var log = movements.findByProductIdAndVariantIdOrderByCreatedAtDesc(
+					product.getId(), variant.getId(),
+					org.springframework.data.domain.Pageable.unpaged()).getContent();
+
+			assertThat(log.get(0).getNote()).isEqualTo("delivered Tuesday");
+		}
+
+		@Test
 		@DisplayName("a stocktake that matches the system logs nothing")
 		void noChangeNoMovement() {
 			// Otherwise the movement log fills with zero rows that have to be explained away.
