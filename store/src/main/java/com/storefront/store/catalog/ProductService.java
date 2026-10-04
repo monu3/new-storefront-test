@@ -857,6 +857,17 @@ public class ProductService {
 				: products.findByShopIdAndStatusAndDeletedAtIsNull(shop.getId(), status, pageable);
 	}
 
+	/**
+	 * Sellable units across a product's variants (Phase 4).
+	 *
+	 * <p>Available rather than on hand, because that is what a shop owner can promise a customer.
+	 * Showing reserved stock as sellable is how an oversell happens.
+	 */
+	@Transactional(readOnly = true)
+	public long totalAvailableStock(UUID productId) {
+		return products.totalAvailableStock(productId);
+	}
+
 	@Transactional(readOnly = true)
 	public Page<Product> listForShop(Shop shop, ProductCategory category, Product.Status status,
 			Pageable pageable) {

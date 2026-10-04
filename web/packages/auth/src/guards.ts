@@ -62,3 +62,23 @@ export async function authorizedFetch(
 }
 
 export type { AppRole };
+
+/**
+ * POST/PATCH a JSON body with the Bearer token attached.
+ *
+ * <p>Every call site otherwise had to remember `method`, `headers` and `JSON.stringify`, and
+ * getting any one of them wrong fails as a confusing 400 rather than a type error. The body is
+ * serialised here so a caller cannot send `[object Object]`.
+ */
+export async function postJson(
+  adapter: AuthAdapter,
+  url: string,
+  body: unknown,
+  method: 'POST' | 'PATCH' | 'PUT' | 'DELETE' = 'POST',
+): Promise<Response> {
+  return authorizedFetch(adapter, url, {
+    method,
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body ?? {}),
+  });
+}

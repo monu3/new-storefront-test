@@ -52,6 +52,8 @@ export default defineConfig(({ mode }) => {
     // only ever talks to one origin, so a CORS mistake cannot masquerade as a broken auth
     // flow while developing. Production is a separate concern (see plan section 9).
     proxy: {
+      // `/silent-check-sso.html` is deliberately absent: it lives in `public/` and Vite serves it
+      // directly. Proxying it to this same server is an infinite loop, which returns a 500.
       '/api': {
         target: process.env.VITE_API_URL ?? 'http://localhost:8080',
         changeOrigin: true,

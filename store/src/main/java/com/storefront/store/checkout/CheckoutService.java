@@ -46,6 +46,7 @@ public class CheckoutService {
 	private final OrderNumberService orderNumbers;
 	private final PaymentTransactionRepository payments;
 	private final ShopRepository shops;
+	private final com.storefront.store.settings.ShopSettingService settings;
 	private final com.storefront.store.payment.PaymentGatewayRegistry gateways;
 
 	// ------------------------------------------------------------------ quote
@@ -78,6 +79,16 @@ public class CheckoutService {
 				// A shop that is not verified reads as absent, not as forbidden: an unverified shop
 				// must be indistinguishable from one that was never created.
 				.orElseThrow(() -> new ShopUnavailableException(request.shopSlug()));
+
+		// The owner can close the shop. Read here rather than in the quote because a closed shop
+		// must refuse the *order*, not merely stop quoting: a basket priced moments before closing
+		// is still a basket the customer expects to be honoured.
+		//
+		// A shop with no settings row accepts orders, so this changes nothing until an owner
+		// deliberately switches it off.
+		if (!settings.checkout(shop.getId()).acceptOrders()) {
+			throw new ShopClosedException(request.shopSlug());
+		}
 
 		Quote quote = quotes.quote(shop, request.lines(), request.city(), request.discountCode(),
 				request.customerId());
@@ -268,6 +279,20 @@ public class CheckoutService {
 	}
 
 	/** The shop does not exist, or is not verified. 404 for both. */
+	/**
+	 * The owner has switched off accepting orders.
+	 *
+	 * <p>Distinct from {@link ShopUnavailableException} because it is not a 404-shaped problem: the
+	 * shop exists and is browsable, it just is not selling right now. The storefront shows "this
+	 * shop is closed", which is a different message from "this shop does not exist" and one the
+	 * customer can act on by coming back later.
+	 */
+	public static class ShopClosedException extends RuntimeException {
+		public ShopClosedException(String slug) {
+			super("This shop is not accepting orders at the moment. Please try again later.");
+		}
+	}
+
 	public static class ShopUnavailableException extends RuntimeException {
 		public ShopUnavailableException(String slug) {
 			super("No shop available at '" + slug + "'");

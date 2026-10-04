@@ -1,5 +1,6 @@
 package com.storefront.store.order;
 
+import java.time.Instant;
 import java.util.Locale;
 import java.util.UUID;
 
@@ -54,6 +55,7 @@ public class OrderNumberService {
 	private static final int DIGITS = 4;
 
 	private final OrderNumberSequenceRepository sequences;
+	private final com.storefront.store.settings.ShopSettingService shopSettings;
 
 	/**
 	 * Allocates the next order number for a shop, joining the caller's transaction.
@@ -72,6 +74,21 @@ public class OrderNumberService {
 						"Order number counter missing for shop " + shopId));
 
 		long issued = counter.increment();
+
+		// The owner may choose the format (Phase 4). Read after the increment so an unwritable or
+		// absent settings row cannot fail the allocation: the number is already committed to this
+		// shop's sequence and refusing here would burn it for nothing.
+		var format = shopSettings.orderNumber(shopId);
+		return format.render(issued, Instant.now());
+	}
+
+	/**
+	 * The legacy {@code ORD-0001} format.
+	 *
+	 * <p>Kept for seeding historical orders and for any caller that must not depend on a settings
+	 * row existing.
+	 */
+	String legacyNumber(long issued) {
 		return "ORD-" + String.format(Locale.ROOT, "%0" + DIGITS + "d", issued);
 	}
 

@@ -14,7 +14,8 @@ import {
 import { authorizedFetch } from '@store-app/auth';
 import type { AuthAdapter } from '@store-app/auth';
 import type { Dashboard } from '@store-app/api-client';
-import { Card, CardContent, Skeleton } from '@store-app/ui';
+import { Badge, Card, CardContent, Skeleton } from '@store-app/ui';
+import { AlertTriangle } from 'lucide-react';
 
 /**
  * The shop dashboard (Phase 4).
@@ -123,6 +124,7 @@ export function ShopDashboard({ auth }: { auth: AuthAdapter }) {
         </Card>
 
         <TrafficSourcesCard />
+        <LowStockCard auth={auth} />
       </div>
 
       {/* ------------------------------------------------------------ sales trend */}
@@ -266,6 +268,126 @@ function DashboardSkeleton() {
       </div>
       <Skeleton className="h-[420px] rounded-xl" />
     </div>
+  );
+}
+
+// ---------------------------------------------------------------------- low stock
+
+interface LowStockRow {
+  productId: string;
+  variantId: string;
+  variantName: string | null;
+  sku: string | null;
+  onHand: number;
+  reserved: number;
+  available: number;
+  lowStockThreshold: number;
+  lowStock: boolean;
+}
+
+/**
+ * What is running out, on the dashboard rather than buried in a stock screen.
+ *
+ * <p>The figure is the server's `available` — on hand minus reserved. Reserved stock is committed
+ * to orders that have been placed but not yet accepted, so counting it would tell an owner they
+ * have more than they can actually sell.
+ *
+ * <p><b>A warning, never a rule.</b> Nothing here decides a shop has "too little" of something it
+ * intends to restock tomorrow, and no row offers a one-click reorder for a product the shop may not
+ * intend to restock at all.
+ */
+function LowStockCard({ auth }: { auth: AuthAdapter }) {
+  const { data, isLoading } = useQuery({
+    queryKey: ['low-stock'],
+    queryFn: async () => {
+      const response = await authorizedFetch(auth, '/api/v1/shop/stock/low');
+      if (!response.ok) return [];
+      return (await response.json()) as LowStockRow[];
+    },
+  });
+
+  // Ordered worst-first so an out-of-stock line is the first thing read.
+  const rows = [...(data ?? [])].sort((a, b) => a.available - b.available).slice(0, 6);
+  const outOfStock = (data ?? []).filter((r) => r.available <= 0).length;
+
+  return (
+    <Card>
+      <CardContent className="p-6">
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <h2 className="text-base font-semibold">Low Stock</h2>
+            <p className="mt-0.5 text-sm text-muted-foreground">
+              {isLoading
+                ? 'Checking…'
+                : (data ?? []).length === 0
+                  ? 'Everything is above its warning level.'
+                  : `${(data ?? []).length} item${(data ?? []).length === 1 ? '' : 's'} at or below its threshold${outOfStock ? `, ${outOfStock} out of stock` : ''}.`}
+            </p>
+          </div>
+          {(data ?? []).length > 0 ? (
+            <a
+              href="/shop/stock"
+              className="shrink-0 text-sm text-blue-600 hover:underline"
+            >
+              Manage stock
+            </a>
+          ) : null}
+        </div>
+
+        {isLoading ? (
+          <Skeleton className="mt-5 h-32 rounded-lg" />
+        ) : rows.length === 0 ? (
+          <p className="mt-5 rounded-lg border border-dashed p-4 text-center text-sm text-muted-foreground">
+            Nothing is running low right now.
+          </p>
+        ) : (
+          <ul className="mt-5 divide-y">
+            {rows.map((row) => (
+              <li key={row.variantId} className="flex items-center gap-3 py-2.5">
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate text-sm font-medium">
+                    {row.variantName || 'Unnamed variant'}
+                  </span>
+                  {row.sku ? (
+                    <span className="block truncate font-mono text-xs text-muted-foreground">
+                      {row.sku}
+                    </span>
+                  ) : null}
+                </span>
+                <span className="text-xs text-muted-foreground">
+                  warn at {row.lowStockThreshold}
+                </span>
+                <Badge
+                  className={
+                    row.available <= 0
+                      ? 'bg-red-50 text-red-700'
+                      : row.available <= row.lowStockThreshold
+                        ? 'bg-amber-50 text-amber-700'
+                        : 'bg-muted text-muted-foreground'
+                  }
+                >
+                  {row.available <= 0 ? (
+                    <>
+                      <AlertTriangle className="mr-1 size-3" aria-hidden />
+                      Out of stock
+                    </>
+                  ) : (
+                    `${row.available} left`
+                  )}
+                </Badge>
+              </li>
+            ))}
+          </ul>
+        )}
+
+        {rows.length > 0 ? (
+          <p className="mt-4 text-xs text-muted-foreground">
+            Available is what you can sell now: {rows.length === 1 ? 'this item' : 'these items'}{' '}
+            minus stock already reserved for orders you have accepted.
+          </p>
+        ) : null}
+      </CardContent>
+    </Card>
   );
 }
 

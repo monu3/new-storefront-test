@@ -4,6 +4,9 @@ import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
+
 import org.springframework.data.jpa.repository.JpaRepository;
 
 /**
@@ -19,6 +22,14 @@ public interface DiscountRepository extends JpaRepository<Discount, UUID> {
 	Optional<Discount> findByShopIdAndCodeIgnoreCase(UUID shopId, String code);
 
 	List<Discount> findByShopIdAndActiveTrueOrderByIdAsc(UUID shopId);
+
+	/**
+	 * Every discount for the owner's console, paged.
+	 *
+	 * <p>Includes inactive ones: a paused campaign is something an owner needs to see and re-enable,
+	 * and a list that silently hid it would leave them wondering whether it was deleted.
+	 */
+	Page<Discount> findAllByShopIdOrderByIdAsc(UUID shopId, Pageable pageable);
 
 	/** Automatic discounts: no code, so they apply without the customer doing anything. */
 	List<Discount> findByShopIdAndActiveTrueAndCodeIsNullOrderByIdAsc(UUID shopId);

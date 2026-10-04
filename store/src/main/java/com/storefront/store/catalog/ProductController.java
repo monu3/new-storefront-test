@@ -54,6 +54,7 @@ public class ProductController {
 	private static final int MAX_PAGE_SIZE = 100;
 
 	private final ProductService products;
+	private final ProductVariantRepository variants;
 	private final TenantGuard tenantGuard;
 
 	// ------------------------------------------------------------------ products
@@ -225,7 +226,9 @@ public class ProductController {
 				? products.search(shop, q, pageable)
 				: products.searchInCategory(shop, q, category, pageable);
 
-		return PageResponse.from(result, ProductSummary::from);
+		// Stock and variant counts for the whole page in two queries, not one per row.
+		return PageResponse.from(result, product -> ProductSummary.from(product,
+				stockFor(product.getId()), variantCountFor(product.getId())));
 	}
 
 	/**
@@ -442,6 +445,20 @@ public class ProductController {
 			@Size(max = 500) String imageUrl) {
 	}
 
+	/**
+	 * Total sellable units across a product's variants.
+	 *
+	 * <p>Available rather than on hand: the table shows what can still be sold, and a figure that
+	 * includes reserved stock overstates what an owner can promise a customer.
+	 */
+	private int stockFor(UUID productId) {
+		return (int) products.totalAvailableStock(productId);
+	}
+
+	private int variantCountFor(UUID productId) {
+		return (int) variants.countByProductId(productId);
+	}
+
 	// ------------------------------------------------------------------ responses
 
 	/**
@@ -500,28 +517,58 @@ public class ProductController {
 	}
 
 	/** A row in the console's product table: enough to render, not enough to open an edit form. */
+	/**
+	 * One row in the shop's product table (Phase 4).
+	 *
+	 * @param stock total sellable units across every variant. A product-level figure because the
+	 *              table has one Stock column; the product screen shows the per-variant breakdown.
+	 * @param categoryLabel rendered rather than the enum code, so the console does not re-derive
+	 *                     "MASALA" into "Masala" and disagree with the storefront about it.
+	 */
 	public record ProductSummary(
 			UUID id,
 			String name,
 			String slug,
 			ProductCategory category,
+			String categoryLabel,
 			Product.Status status,
 			long price,
+			Long compareAt,
+			boolean hasDiscount,
 			boolean trackInventory,
+			int stock,
 			int soldCount,
-			int variantCount) {
+			int variantCount,
+			boolean featured) {
 
-		static ProductSummary from(Product product) {
+		/**
+		 * Maps a product to a table row.
+		 *
+		 * <p>{@code stock} and {@code variantCount} come from a bulk lookup rather than per row: a
+		 * catalogue page is 20 products, and one query each would be 40 round trips to render a
+		 * single table.
+		 */
+		static ProductSummary from(Product product, int stock, int variantCount) {
 			return new ProductSummary(
 					product.getId(),
 					product.getName(),
 					product.getSlug(),
 					product.getProductCategory(),
+					product.getProductCategory().label(),
 					product.getStatus(),
 					product.getBasePriceMinor(),
+					product.getCompareAtMinor(),
+					product.hasDiscount(),
 					product.isTrackInventory(),
+					stock,
 					product.getSoldCount(),
-					0);
+					variantCount,
+					product.isFeatured());
+		}
+
+		/** Kept for callers that genuinely do not need stock, such as the theme editor's palette. */
+		static ProductSummary from(Product product) {
+			return from(product, 0, 0);
 		}
 	}
 

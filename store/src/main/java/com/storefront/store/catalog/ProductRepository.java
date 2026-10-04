@@ -242,4 +242,18 @@ public interface ProductRepository extends JpaRepository<Product, UUID> {
 
 	/** Soft-deleted products, so a shop owner can find and restore a mistake. */
 	Page<Product> findByShopIdAndDeletedAtIsNotNull(UUID shopId, Pageable pageable);
+
+	/**
+	 * Sellable units across a product's variants (Phase 4).
+	 *
+	 * <p>Available, not on hand. The product table's Stock column is what an owner can promise a
+	 * customer, and a figure including reserved stock overstates it.
+	 */
+	@Query(value = """
+			SELECT coalesce(sum(i.quantity_on_hand - i.quantity_reserved), 0)
+			FROM inventory i
+			JOIN product_variant v ON v.id = i.variant_id
+			WHERE v.product_id = :productId
+			""", nativeQuery = true)
+	long totalAvailableStock(@Param("productId") UUID productId);
 }

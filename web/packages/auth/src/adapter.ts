@@ -179,7 +179,15 @@ export function createKeycloakAdapter(config: AuthConfig): AuthAdapter {
       if (!initPromise) {
         initPromise = kc
           .init({
-            // No onLoad, so the adapter only initialises. It does not try to authenticate.
+            // Restores a session silently on reload, so a shop owner is not bounced to the login
+            // screen every time they refresh — which is what happens with no onLoad at all, since
+            // nothing is ever written to sessionStorage.
+            //
+            // `check-sso` only settles because /silent-check-sso.html posts the callback URL to this
+            // window. Without that page the iframe 404s and this promise never resolves — the
+            // white-page failure recorded in the plan.
+            onLoad: 'check-sso',
+            silentCheckSsoRedirectUri: `${config.redirectUri}/silent-check-sso.html`,
             pkceMethod: 'S256',
             checkLoginIframe: false,
             // Guarded read: this runs in the browser, where the console's Vite build has no

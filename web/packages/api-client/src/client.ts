@@ -38,11 +38,38 @@ export function newIdempotencyKey(prefix = 'idem'): string {
   return `${prefix}_${rand}`;
 }
 
+/**
+ * Supplies the bearer token, if the caller has one.
+ *
+ * <p>A function rather than a token string, because the Keycloak access token expires and has to
+ * be refreshed on use. Registering the string once would mean every request after the first
+ * refresh carried an expired token, and the symptom — a page that worked for ten minutes and then
+ * started 401ing — is maddening to diagnose.
+ *
+ * <p>Left unset, requests are sent anonymously. That is correct for the SSR storefront, which reads
+ * public endpoints server-side and has no interactive session, and for the shop-type and category
+ * pickers.
+ */
+let tokenProvider: (() => Promise<string | null>) | null = null;
+
+/** Registers the token supplier. Called once by each app at startup. */
+export function setTokenProvider(provider: (() => Promise<string | null>) | null): void {
+  tokenProvider = provider;
+}
+
 async function request<T>(path: string, options: RequestOptions = {}): Promise<T> {
   const { body, idempotencyKey, headers, ...rest } = options;
 
   const requestHeaders = new Headers(headers);
   requestHeaders.set('Accept', 'application/json');
+
+  // Previously absent entirely, which meant every call this package made against a protected
+  // endpoint answered 401. The theme editor was the visible symptom: its list, get, save and
+  // publish calls all went out without a token and the page silently rendered nothing.
+  const token = await tokenProvider?.();
+  if (token) {
+    requestHeaders.set('Authorization', `Bearer ${token}`);
+  }
   if (body !== undefined) {
     requestHeaders.set('Content-Type', 'application/json');
   }

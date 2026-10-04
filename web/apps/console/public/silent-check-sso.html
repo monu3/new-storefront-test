@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Silent SSO check</title>
+  </head>
+  <body>
+    <!--
+      The silent SSO callback.
+
+      keycloak-js opens this in a hidden iframe, redirects it to Keycloak's login endpoint with
+      `prompt=none`, and Keycloak redirects back here with the tokens in the fragment. All this page
+      does is hand that URL to the parent window; the Keycloak adapter running in the parent picks
+      the tokens up from the message.
+
+      That indirection is why the page carries no Keycloak code of its own, and why it lives in
+      `public/` rather than in `src`: it is served verbatim, unauthenticated, at the app root.
+
+      Without this file `kc.init({ onLoad: 'check-sso' })` never settles, because the iframe 404s
+      and nothing ever posts back. That produced a permanently white console.
+    -->
+    <script>
+      parent.postMessage(location.href, location.origin);
+    </script>
+  </body>
+</html>

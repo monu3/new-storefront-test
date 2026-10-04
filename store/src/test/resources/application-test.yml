@@ -37,6 +37,11 @@ spring:
     # password omitted for the same reason as the datasource password above.
 
 store:
+  secrets:
+    # A test-only passphrase, so SecretCipherIT can assert real encryption round-trips. Set in the
+    # test profile rather than defaulted in application.yml: a shipped default key would mean every
+    # deployment shares one.
+    key: ${TEST_SECRETS_KEY:test-only-not-a-real-passphrase}
   themes:
     # The template seeder publishes starter templates on boot. Off here: tests assert on the
     # marketplace contents, and a seeder running on the way into the context would decide what
@@ -48,3 +53,4 @@ logging:
     root: WARN
     com.storefront.store: INFO
     org.springframework.test: INFO
+

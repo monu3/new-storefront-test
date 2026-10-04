@@ -59,6 +59,32 @@ const targets = [
         p.evaluate(() => getComputedStyle(document.body).margin !== '16px')],
     ],
   },
+  {
+    name: 'console: silent SSO callback page',
+    url: 'http://localhost:5173/silent-check-sso.html',
+    // Without this page `kc.init({ onLoad: 'check-sso' })` never settles and the console is
+    // permanently white. It is easy to delete as "unused" and there is no error until someone
+    // tries to sign in.
+    expect: [
+      ['is served, not 404', (p) => p.evaluate(() => document.title !== '')],
+      ['posts its URL to the parent', (p) => p.content().then((c) => c.includes('postMessage'))],
+    ],
+  },
+  {
+    name: 'console: guarded route survives a reload',
+    url: 'http://localhost:5173/shop/orders',
+    // The regression this guards: RequireRole read getSession() synchronously, so on a full reload
+    // the owner was bounced to /login while soft navigation worked. Fails closed now, which is
+    // also why an unauthenticated visitor lands on /login and not on a blank page.
+    expect: [
+      ['does not white-page', (p) =>
+        p.evaluate(() => document.getElementById('root')?.children.length > 0)],
+      ['lands somewhere real', (p) =>
+        p.evaluate(() => location.pathname === '/login' || location.pathname.startsWith('/shop'))],
+      ['stylesheet actually applied', (p) =>
+        p.evaluate(() => getComputedStyle(document.body).margin !== '16px')],
+    ],
+  },
 ];
 
 const browser = await chromium.launch({ channel: 'chrome' });
@@ -75,7 +101,13 @@ for (const t of targets) {
   const consoleErrors = [];
   const pageErrors = [];
   const failedRequests = [];
-  page.on('console', (m) => m.type() === 'error' && consoleErrors.push(m.text()));
+  page.on('console', (m) => {
+    // A missing favicon is a 404, not a defect: it is a browser-initiated request that no page
+    // depends on, and failing on it would train the check to be ignored.
+    if (m.type() !== 'error') return;
+    if (m.location()?.url?.includes('favicon.ico')) return;
+    consoleErrors.push(m.text());
+  });
   page.on('pageerror', (e) => pageErrors.push(e.message));
   page.on('requestfailed', (r) => failedRequests.push(`${r.url()} ${r.failure()?.errorText}`));
 

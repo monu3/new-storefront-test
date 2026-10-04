@@ -8,8 +8,10 @@ import {
   CircleHelp,
   FileText,
   Gauge,
+  Image,
   LayoutGrid,
   LogOut,
+  Percent,
   Settings,
   ShoppingBag,
   Sparkles,
@@ -356,13 +358,36 @@ function MenuItem({
   );
 }
 
-/** The H1 in the top bar, which follows the section rather than the route. */
+/**
+ * The H1 in the top bar.
+ *
+ * <p>Matches the longest route prefix rather than the first one that fits. `/shop` matches both
+ * "Dashboard" and the `/shop/orders` prefix, so a naive `find` always returns Dashboard and every
+ * page in the console is titled "Dashboard" — which is how this was caught: the orders and
+ * products screens rendered correctly but both said "Dashboard".
+ */
 function PageTitle({ pathname }: { pathname: string }) {
-  const item = [...SHOP_NAV, ...ADMIN_NAV].find(
-    (n) => pathname === n.to || pathname.startsWith(`${n.to}/`),
+  // The most specific title wins. `/shop/products` would otherwise label the new-product form
+  // "Products", which is a different screen with a different job.
+  const specific = ROUTE_TITLES.find((r) => pathname === r.path || pathname.startsWith(r.path));
+  const item = [...SHOP_NAV, ...ADMIN_NAV]
+    .filter((n) => pathname === n.to || pathname.startsWith(`${n.to}/`))
+    .sort((a, b) => b.to.length - a.to.length)[0];
+
+  return (
+    <h1 className="text-2xl font-semibold tracking-tight" data-testid="page-title">
+      {specific?.label ?? item?.label ?? 'Dashboard'}
+    </h1>
   );
-  return <h1 className="text-2xl font-semibold tracking-tight">{item?.label ?? 'Dashboard'}</h1>;
 }
+
+/** Titles for routes a nav item cannot describe on its own. */
+const ROUTE_TITLES: Array<{ path: string; label: string }> = [
+  { path: '/shop/products/new', label: 'Add Product' },
+  { path: '/shop/discounts', label: 'Discounts' },
+  { path: '/shop/media', label: 'Media Library' },
+  { path: '/shop/audience', label: 'Audience' },
+];
 
 // -------------------------------------------------------------------------- nav
 
@@ -377,6 +402,8 @@ const SHOP_NAV: NavItem[] = [
   { to: '/shop/orders', label: 'Orders', icon: ShoppingBag },
   { to: '/shop/products', label: 'Products', icon: LayoutGrid },
   { to: '/shop/audience', label: 'Audience', icon: Users },
+  { to: '/shop/discounts', label: 'Discounts', icon: Percent },
+  { to: '/shop/media', label: 'Media', icon: Image },
   { to: '/shop/theme', label: 'Appearance', icon: Sparkles },
   { to: '/shop/settings', label: 'Settings', icon: Settings },
 ];

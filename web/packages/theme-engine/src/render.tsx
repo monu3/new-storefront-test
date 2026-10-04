@@ -5,6 +5,17 @@
  * section, and streams the markup. No fetching, no hooks, no effects — which is what makes the
  * page indexable and share-previewable (D1), and what makes the editor preview identical to the
  * live storefront because both call this same function with the same input.
+ *
+ * <p><b>There is deliberately no {@code onIssues} callback.</b> It existed, and calling it from the
+ * render body set state in the <em>parent</em> mid-render, which React rejects — and because every
+ * parse produced a fresh {@code issues} array, re-rendering the parent, which re-rendered this,
+ * it was also an infinite loop: "Maximum update depth exceeded".
+ *
+ * <p>A component cannot both report and stay pure, so reporting belongs to the caller. The editor
+ * parses the same document with the exported {@link parseTheme} and reads the issues itself; the
+ * storefront renders them through {@code <ThemeIssues>}, which is already inline below. This went
+ * unnoticed for a long time because the editor's API calls were unauthenticated and never
+ * returned a theme to render at all — two independent faults, one hiding the other.
  */
 
 import type { CSSProperties, ReactNode } from 'react';
@@ -24,13 +35,6 @@ export interface ThemeRendererProps {
   /** Wrapper class, so the editor can add its own chrome around the same content. */
   className?: string;
   /**
-   * Collects validation problems instead of only rendering.
-   *
-   * The editor shows them; the storefront logs them. A theme saved before a schema change should
-   * render with a visible gap, not a 500.
-   */
-  onIssues?: (issues: string[]) => void;
-  /**
    * Render a visible notice when the theme does not validate.
    *
    * <p>On by default, and it should stay that way. A theme that fails to parse used to produce an
@@ -48,13 +52,11 @@ export function ThemeRenderer({
   config,
   data,
   className,
-  onIssues,
   showIssues = true,
 }: ThemeRendererProps) {
   const { theme, issues } = parseTheme(
     typeof config === 'string' ? safeParse(config) : config,
   );
-  onIssues?.(issues);
 
   const resolved = resolveSections(theme.sections, data);
 

@@ -108,3 +108,4 @@ export { default as useMergeRef } from './hooks/useMergeRef';
 export { default as useControllableState } from './hooks/useControllableState';
 export { default as useDidUpdate } from './hooks/useDidUpdate';
 export { default as useTimeout } from './hooks/useTimeout';
+export * from './data-table';

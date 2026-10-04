@@ -187,6 +187,26 @@ public class ApiExceptionHandler {
 	}
 
 	/**
+	 * The owner has closed the shop.
+	 *
+	 * <p>409 rather than 404, and deliberately not {@code SHOP_UNAVAILABLE}: the shop exists, is
+	 * browsable and will sell again. The customer needs "closed for now, try later", which is a
+	 * different message from "this shop does not exist" — and conflating the two would make a
+	 * temporarily closed shop look deleted.
+	 */
+	@ExceptionHandler(com.storefront.store.checkout.CheckoutService.ShopClosedException.class)
+	public ProblemDetail handleShopClosed(
+			com.storefront.store.checkout.CheckoutService.ShopClosedException ex,
+			HttpServletRequest request) {
+
+		var problem = ProblemDetail.forStatusAndDetail(HttpStatus.CONFLICT, ex.getMessage());
+		problem.setTitle("Shop is closed");
+		problem.setProperty("code", "SHOP_CLOSED");
+		problem.setInstance(java.net.URI.create(request.getRequestURI()));
+		return problem;
+	}
+
+	/**
 	 * The shop cannot afford the commission for this order.
 	 *
 	 * <p>409 with the shortfall, because this is the mechanism behind "shops must credit money

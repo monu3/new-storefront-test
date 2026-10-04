@@ -43,6 +43,7 @@ import lombok.extern.slf4j.Slf4j;
 public class InventoryService {
 
 	private final InventoryRepository inventory;
+	private final LowStockNotifier lowStock;
 	private final InventoryMovementRepository movements;
 
 	// ------------------------------------------------------------------ reads
@@ -266,6 +267,39 @@ public class InventoryService {
 		}
 	}
 
+	/**
+	 * Commits reservations and then warns about anything the commit pushed below its threshold.
+	 *
+	 * <p>An accept is the moment stock actually leaves the shelf, so it is the moment a
+	 * "you are running low" warning is true rather than hypothetical. The old count is captured
+	 * per line before the commit, because after it the row is already low and the crossing cannot
+	 * be detected.
+	 *
+	 * <p>Names come from the caller's {@link StockLine}, not from the inventory row, which carries
+	 * only ids — a notification reading "Product 3f2a…" tells a shop owner nothing.
+	 *
+	 * @param shopId whose shop to warn
+	 * @param named lines carrying a product and variant name for the message
+	 */
+	@Transactional
+	public void commitAllAndWarn(UUID shopId, List<NamedStockLine> lines, UUID orderId) {
+		for (NamedStockLine line : lines) {
+			Inventory row = inventory.findByIdProductIdAndIdVariantId(
+					line.productId(), line.variantId()).orElse(null);
+			boolean wasAlreadyLow = row != null && row.isLowStock();
+
+			commit(line.productId(), line.variantId(), line.quantity(), orderId);
+
+			Inventory after = inventory.findByIdProductIdAndIdVariantId(
+					line.productId(), line.variantId()).orElse(null);
+			if (after != null) {
+				lowStock.check(shopId, line.productId(), line.variantId(), line.productName(),
+						line.variantName(), after.available(), after.getLowStockThreshold(),
+						wasAlreadyLow);
+			}
+		}
+	}
+
 	// ------------------------------------------------------------------ internals
 
 	/** Loads the stock row, creating it at zero when a product has never been stocked. */
@@ -282,5 +316,15 @@ public class InventoryService {
 	 * which has an order.
 	 */
 	public record StockLine(UUID productId, UUID variantId, int quantity) {
+	}
+
+	/**
+	 * A stock line that also carries the names, for messages a human will read.
+	 *
+	 * <p>Separate from {@link StockLine} so the reservation path — which never needs a name and is
+	 * called from checkout — keeps taking the leaner record.
+	 */
+	public record NamedStockLine(UUID productId, UUID variantId, int quantity,
+			String productName, String variantName) {
 	}
 }

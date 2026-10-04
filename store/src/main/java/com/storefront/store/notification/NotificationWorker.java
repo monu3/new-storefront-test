@@ -58,6 +58,13 @@ public class NotificationWorker {
 			return;
 		}
 
+		// Low stock is a shop-only warning. It has no order, no customer and no amount, and
+		// addressing it to a customer would email a message about somebody else's inventory.
+		if ("LOW_STOCK".equals(type)) {
+			handleLowStock(event, shopId);
+			return;
+		}
+
 		String title = title(type, orderNumber);
 		String body = body(type, orderNumber, totalMinor);
 
@@ -70,6 +77,30 @@ public class NotificationWorker {
 			storeNotification(Notification.Audience.CUSTOMER, null, shopId, type, title, body,
 					customerEmail);
 		}
+	}
+
+	/**
+	 * The low-stock warning.
+	 *
+	 * <p>Uses the owner's own email template with {@code {body}} replaced by the product and count.
+	 * The subject and body are optional in settings, so each falls back to a plain sentence rather
+	 * than sending an empty mail.
+	 */
+	private void handleLowStock(JsonNode event, UUID shopId) {
+		String productName = text(event, "productName");
+		String variantName = text(event, "variantName");
+		int available = event.hasNonNull("available") ? event.get("available").asInt() : 0;
+		int threshold = event.hasNonNull("threshold") ? event.get("threshold").asInt() : 0;
+
+		String item = variantName == null || variantName.isBlank()
+				? productName
+				: productName + " (" + variantName + ")";
+
+		String subject = "Low stock: " + item;
+		String bodyText = item + " has " + available + " left (warning at " + threshold + ").";
+
+		storeNotification(Notification.Audience.SHOP, null, shopId, "LOW_STOCK",
+				subject, bodyText, shopName(shopId));
 	}
 
 	private void storeNotification(Notification.Audience audience, UUID userId, UUID shopId,

@@ -12,6 +12,8 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.http.ResponseEntity;
+import org.springframework.data.domain.Sort;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -31,6 +33,7 @@ import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.NotEmpty;
 import jakarta.validation.constraints.Size;
 import lombok.RequiredArgsConstructor;
 
@@ -57,6 +60,7 @@ public class OrderController {
 	private static final int MAX_PAGE_SIZE = 100;
 
 	private final OrderService orders;
+	private final BulkTransitionService bulk;
 	private final OrderStateMachine stateMachine;
 	private final InventoryService inventory;
 	private final TenantGuard tenantGuard;
@@ -67,25 +71,139 @@ public class OrderController {
 	@GetMapping
 	@Operation(summary = "The shop's orders",
 			description = "Newest first. Filter by status, or ask only for open ones.")
-	public PageResponse<OrderSummary> list(
+	public OrderBoardResponse list(
 			@RequestParam(required = false) ShopOrder.Status status,
 			@RequestParam(required = false) Boolean open,
+			@RequestParam(required = false) String q,
+			@RequestParam(required = false) String sort,
 			@RequestParam(defaultValue = "0") int page,
 			@RequestParam(defaultValue = "20") int size) {
 
 		Shop shop = tenantGuard.requireOwnedShop();
-		Pageable pageable = PageRequest.of(page, Math.min(size, MAX_PAGE_SIZE),
-				Sort.by(Sort.Direction.DESC, "placedAt"));
+		Pageable pageable = pageableFor(page, size, sortFor(sort));
 
-		Page<ShopOrder> result = Boolean.TRUE.equals(open)
-				? orders.listOpen(shop, pageable)
-				: status == null
-						? orders.listForShop(shop, pageable)
-						: orders.listForShop(shop, status, pageable);
+		Page<ShopOrder> result;
+		if (q != null && !q.isBlank()) {
+			// A search is a search, whatever the status tab says: someone who types an order number
+			// wants that order, not that order if it happens to be pending.
+			result = orders.searchOrders(shop, q, pageable);
+		} else if (Boolean.TRUE.equals(open)) {
+			result = orders.listOpen(shop, pageable);
+		} else if (status != null) {
+			result = orders.listForShop(shop, status, pageable);
+		} else {
+			result = orders.listActive(shop, pageable);
+		}
 
-		// One grouped query for the whole page, not a count per row.
+		// Counts computed once: they are the same query, and the board needs them for the tab
+		// badges as well as for the total.
+		java.util.Map<ShopOrder.Status, Long> counts = orders.countsByStatus(shop);
 		Map<UUID, Integer> lineCounts = orders.lineCounts(result.getContent());
-		return PageResponse.from(result, order -> OrderSummary.from(order, lineCounts));
+
+		return new OrderBoardResponse(
+				PageResponse.from(result, order -> OrderSummary.from(order, lineCounts)),
+				status,
+				counts,
+				counts.values().stream().mapToLong(Long::longValue).sum());
+	}
+
+	/**
+	 * Orders as CSV, for the Export button (Phase 4).
+	 *
+	 * <p>Same filters as the list, so what is exported is what was on screen. Exporting a
+	 * different set from the one being looked at is how a shop sends the wrong file to their
+	 * accountant.
+	 *
+	 * <p>Every field is quoted and internal quotes are doubled, because a customer name
+	 * containing a comma would otherwise shift every column after it.
+	 */
+	@GetMapping(value = "/export.csv", produces = "text/csv; charset=UTF-8")
+	@Operation(summary = "Orders as CSV", description = "Applies the same status and search filters as the list.")
+	public ResponseEntity<byte[]> export(
+			@RequestParam(required = false) ShopOrder.Status status,
+			@RequestParam(required = false) String q,
+			@RequestParam(defaultValue = "0") int page,
+			@RequestParam(defaultValue = "1000") int size) {
+
+		Shop shop = tenantGuard.requireOwnedShop();
+		Pageable pageable = pageableFor(page, size, Sort.by(Sort.Direction.DESC, "placedAt"));
+
+		Page<ShopOrder> result = (q != null && !q.isBlank())
+				? orders.searchOrders(shop, q, pageable)
+				: status != null
+						? orders.listForShop(shop, status, pageable)
+						: orders.listActive(shop, pageable);
+
+		StringBuilder csv = new StringBuilder(
+				"order_number,placed_at,customer,email,phone,payment_method,payment_status,status,"
+						+ "subtotal,discount,tax,shipping,total,currency\n");
+		for (ShopOrder order : result.getContent()) {
+			csv.append(cell(order.getOrderNumber())).append(',')
+					.append(cell(order.getPlacedAt() == null ? null
+						: order.getPlacedAt().toString())).append(',')
+					.append(cell(CityOf.name(order.getShippingAddress()))).append(',')
+					.append(cell(order.getGuestEmail())).append(',')
+					.append(cell(order.getGuestPhone())).append(',')
+					.append(order.getPaymentMethod()).append(',')
+					.append(order.getPaymentStatus()).append(',')
+					.append(order.getStatus()).append(',')
+					.append(order.getSubtotalMinor()).append(',')
+					.append(order.getDiscountMinor()).append(',')
+					.append(order.getTaxMinor()).append(',')
+					.append(order.getShippingMinor()).append(',')
+					.append(order.getTotalMinor()).append(',')
+					.append(order.getCurrency()).append('\n');
+		}
+
+		return ResponseEntity.ok()
+				.header("Content-Type", "text/csv; charset=UTF-8")
+				.header("Content-Disposition", "attachment; filename=orders.csv")
+				.body(csv.toString().getBytes(java.nio.charset.StandardCharsets.UTF_8));
+	}
+
+	/** Quotes and escapes one CSV field. */
+	private static String cell(String value) {
+		if (value == null) {
+			return "";
+		}
+		return '"' + value.replace("\"", "\"\"") + '"';
+	}
+
+	private Pageable pageableFor(int page, int size, Sort sort) {
+		return PageRequest.of(Math.max(page, 0), Math.min(Math.max(size, 1), MAX_PAGE_SIZE), sort);
+	}
+
+	/**
+	 * Sort key from the UI.
+	 *
+	 * <p>Whitelisted rather than passed through, because an unvalidated sort property reaching
+	 * {@code Pageable} is a 500 from the database on a column that does not exist, and Spring
+	 * Data will happily try to resolve it as a property.
+	 */
+	private Sort sortFor(String sort) {
+		if (sort == null) {
+			return Sort.by(Sort.Direction.DESC, "placedAt");
+		}
+		return switch (sort.toLowerCase(java.util.Locale.ROOT)) {
+			case "date", "oldest" -> Sort.by(Sort.Direction.ASC, "placedAt");
+			case "amount" -> Sort.by(Sort.Direction.DESC, "totalMinor");
+			case "customer" -> Sort.by(Sort.Direction.ASC, "guestEmail");
+			case "status" -> Sort.by(Sort.Direction.ASC, "status");
+			default -> Sort.by(Sort.Direction.DESC, "placedAt");
+		};
+	}
+
+	/**
+	 * The board payload: a page of orders plus the counts that label each filter tab.
+	 *
+	 * <p>The counts travel with the page rather than needing a second request, because a tab row
+	 * that renders before its badges is a visible flash on the screen an owner sees most.
+	 */
+	public record OrderBoardResponse(
+			PageResponse<OrderSummary> page,
+			ShopOrder.Status status,
+			java.util.Map<ShopOrder.Status, Long> countsByStatus,
+			long totalActive) {
 	}
 
 	@GetMapping("/{orderId}")
@@ -203,6 +321,51 @@ public class OrderController {
 	// ------------------------------------------------------------------ requests
 
 	public record CancelRequest(@Size(max = 500) String reason) {
+	}
+
+	// ------------------------------------------------------------------ bulk
+
+	/**
+	 * Moves several orders to the same status in one request.
+	 *
+	 * <p>Named endpoints for single transitions ({@code /accept}, {@code /ship}) and one for the
+	 * batch, rather than a {@code POST /status} taking a target: the single endpoints cannot be
+	 * called with an illegal target, and neither can this one — it dispatches to exactly the same
+	 * methods, so the state machine still decides each order individually.
+	 *
+	 * <p>A bulk <em>accept</em> is the case worth reading twice. Accepting debits commission from
+	 * the shop's prepaid wallet, so accepting forty orders can exceed the balance. Each order is
+	 * attempted in its own transaction, which means the ones the wallet covered commit and the
+	 * rest are refused individually with the shortfall — rather than the whole batch failing and
+	 * leaving the owner with no orders accepted and no idea which would have been.
+	 */
+	@PostMapping("/bulk-transition")
+	@Operation(summary = "Move several orders to one status",
+			description = "Each order is attempted on its own; refusals are reported per id.")
+	public BulkTransitionResponse bulkTransition(@Valid @RequestBody BulkTransitionRequest request) {
+		BulkTransitionService.BulkResult result = bulk.transition(request.orderIds(),
+				request.target(), request.reason());
+
+		return new BulkTransitionResponse(
+				result.moved(),
+				result.refused(),
+				result.requested(),
+				result.allSucceeded());
+	}
+
+	public record BulkTransitionRequest(
+			@NotEmpty @Size(max = 100) List<@NotNull UUID> orderIds,
+			@NotNull ShopOrder.Status target,
+			/** Only used when {@code target} is CANCELLED. */
+			@Size(max = 500) String reason) {
+	}
+
+	public record BulkTransitionResponse(
+			List<UUID> moved,
+			/** Order id to the reason it did not move. Empty when everything moved. */
+			java.util.Map<UUID, String> refused,
+			int requested,
+			boolean allSucceeded) {
 	}
 
 	// ------------------------------------------------------------------ responses

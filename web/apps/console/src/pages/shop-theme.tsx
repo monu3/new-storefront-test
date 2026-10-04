@@ -56,6 +56,19 @@ export function ShopTheme() {
 
   const draft = editor.draft;
 
+  /**
+   * Validation problems for the current draft.
+   *
+   * <p>Computed here rather than reported by {@code ThemeRenderer}, which is a pure component and
+   * cannot call a setter while rendering. The parse is the same exported {@code parseTheme} the
+   * renderer calls, so the editor's list and the storefront's inline notice cannot disagree about
+   * what is wrong.
+   */
+  useEffect(() => {
+    if (!draft) return;
+    setIssues(parseTheme(JSON.stringify(draft)).issues);
+  }, [draft]);
+
   /** Preview data. Real products would come from the shop endpoint; the shape is what matters. */
   const previewData = useMemo<StorefrontData>(
     () => ({
@@ -332,7 +345,6 @@ export function ShopTheme() {
             <ThemeRenderer
               config={draft}
               data={previewData}
-              onIssues={setIssues}
               className="max-h-[70vh] overflow-y-auto p-4"
             />
           </CardContent>

@@ -14,6 +14,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import com.storefront.store.common.Money;
 import com.storefront.store.inventory.InventoryService;
+import com.storefront.store.inventory.InventoryService.NamedStockLine;
 import com.storefront.store.inventory.InventoryService.StockLine;
 import com.storefront.store.shop.Shop;
 import com.storefront.store.wallet.CommissionCalculator;
@@ -177,7 +178,9 @@ public class OrderService {
 		order.freezeCommission(commission.rateBp(), commission.amount().minor(), commission.waived());
 
 		// Stock leaves the shelf only now, when the shop has committed to fulfilling.
-		inventory.commitAll(stockLinesOf(order), order.getId());
+		// Commit and warn in one step: this is where stock actually leaves the shelf, so it is
+		// the first moment a low-stock warning is true rather than hypothetical.
+		inventory.commitAllAndWarn(shop.getId(), namedStockLinesOf(order), order.getId());
 
 		ShopOrder.Status from = order.getStatus();
 		stateMachine.apply(order, ShopOrder.Status.ACCEPTED);
@@ -415,11 +418,83 @@ public class OrderService {
 				eventType, payload);
 	}
 
+	/**
+	 * The default board view: everything still in play.
+	 *
+	 * <p>Delivered, cancelled, refunded and returned orders are excluded. An owner opening the
+	 * board is asking "what needs me", and last month's delivered orders are not what needs them.
+	 * The tabs that need history expose it through the status filter.
+	 */
+	@Transactional(readOnly = true)
+	public Page<ShopOrder> listActive(Shop shop, Pageable pageable) {
+		return orders.findActiveForShop(shop.getId(), pageable);
+	}
+
+	/**
+	 * Searches a shop's orders by number, customer name, phone or email (Phase 4).
+	 *
+	 * <p>Written as one native query because the four fields live in different places: the order
+	 * number and the guest contact details on the order, and the customer's own name on
+	 * {@code app_user} when the order belongs to a signed-in account. Four derived queries would
+	 * be four round trips and would each need a separate result merge.
+	 *
+	 * <p>Every predicate is a bound parameter. The order number column is {@code citext}, so a
+	 * customer typing {@code ord-0001} matches {@code ORD-0001} without the search lower-casing
+	 * anything itself.
+	 */
+	@Transactional(readOnly = true)
+	public Page<ShopOrder> searchOrders(Shop shop, String term, Pageable pageable) {
+		String cleaned = term == null ? "" : term.trim();
+		if (cleaned.isEmpty()) {
+			return orders.findByShopIdOrderByPlacedAtDesc(shop.getId(), pageable);
+		}
+
+		String like = "%" + cleaned.toLowerCase(java.util.Locale.ROOT) + "%";
+		return orders.searchInShop(
+				shop.getId(),
+				like,
+				pageable);
+	}
+
+	/**
+	 * How many of the shop's orders sit in each status (Phase 4).
+	 *
+	 * <p>Drives the count badge on each filter tab. One grouped query, because the tabs are seven
+	 * counts and an owner opens this screen to answer "what needs me".
+	 *
+	 * <p>Counts every non-terminal order, which is what a tab should show: a delivered order last
+	 * month is not in anybody's way and counting it makes the queue look worse than it is.
+	 */
+	@Transactional(readOnly = true)
+	public java.util.Map<ShopOrder.Status, Long> countsByStatus(Shop shop) {
+		java.util.Map<ShopOrder.Status, Long> counts = new java.util.EnumMap<>(ShopOrder.Status.class);
+		for (Object[] row : orders.countByStatusForShop(shop.getId())) {
+			ShopOrder.Status status = ShopOrder.Status.valueOf(String.valueOf(row[0]));
+			counts.put(status, ((Number) row[1]).longValue());
+		}
+		return counts;
+	}
+
 	/** Stock coordinates for every line of an order. */
 	private List<StockLine> stockLinesOf(ShopOrder order) {
 		return items.findByOrderIdOrderByCreatedAtAsc(order.getId()).stream()
 				.filter(item -> item.getVariantId() != null)
 				.map(item -> new StockLine(item.getProductId(), item.getVariantId(), item.getQuantity()))
+				.toList();
+	}
+
+	/**
+	 * The same lines, carrying names.
+	 *
+	 * <p>Read from the order's own frozen snapshot rather than the catalogue. The item names on an
+	 * order are what the customer was shown; a low-stock warning about "Product 3f2a…" would be
+	 * useless, and a warning using today's renamed product would contradict the order it came from.
+	 */
+	private List<NamedStockLine> namedStockLinesOf(ShopOrder order) {
+		return items.findByOrderIdOrderByCreatedAtAsc(order.getId()).stream()
+				.filter(item -> item.getVariantId() != null)
+				.map(item -> new NamedStockLine(item.getProductId(), item.getVariantId(),
+						item.getQuantity(), item.getProductName(), item.getVariantName()))
 				.toList();
 	}
 

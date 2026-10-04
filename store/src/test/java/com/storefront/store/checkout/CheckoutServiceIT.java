@@ -99,6 +99,76 @@ class CheckoutServiceIT {
 				"{\"city\":\"Kathmandu\"}", null, null, method);
 	}
 
+	@Nested
+	@DisplayName("when the owner has closed the shop")
+	class ClosedShop {
+
+		@Test
+		@DisplayName("placing an order is refused")
+		void refusesToPlace() {
+			closeShop();
+
+			// Not a 404-shaped "this shop does not exist": the shop is browsable and will sell
+			// again. The message has to say "closed for now" or the customer concludes it is gone.
+			assertThatThrownBy(() -> checkout.place(request(ShopOrder.PaymentMethod.COD)))
+					.isInstanceOf(CheckoutService.ShopClosedException.class)
+					.hasMessageContaining("not accepting orders");
+		}
+
+		@Test
+		@DisplayName("no order, no number, no stock reserved")
+		void nothingIsWritten() {
+			closeShop();
+
+			assertThatThrownBy(() -> checkout.place(request(ShopOrder.PaymentMethod.COD)))
+					.isInstanceOf(CheckoutService.ShopClosedException.class);
+
+			assertThat(orderRepository.findByShopId(shop.getId())).isEmpty();
+			assertThat(payments.findAll()).isEmpty();
+			// Stock must be untouched: a refused checkout that still held units would strand them.
+			assertThat(inventory.find(product.getId(), variant.getId()).orElseThrow().available())
+					.isEqualTo(100);
+		}
+
+		@Test
+		@DisplayName("reopening lets orders through again")
+		void reopens() {
+			closeShop();
+
+			closeShop(false);
+			var placement = checkout.place(request(ShopOrder.PaymentMethod.COD));
+
+			assertThat(placement.order().getStatus()).isEqualTo(ShopOrder.Status.PENDING);
+		}
+
+		@Test
+		@DisplayName("a shop with no settings row accepts orders")
+		void defaultIsOpen() {
+			// Every shop has no settings row until its owner opens the settings screen. If the
+			// default were closed, every shop in the platform would be shut.
+			assertThat(settings.checkout(shop.getId()).acceptOrders()).isTrue();
+
+			assertThat(checkout.place(request(ShopOrder.PaymentMethod.COD)).order())
+					.isNotNull();
+		}
+	}
+
+	/** Flips the shop's checkout setting, which lives in its settings row. */
+	private void closeShop() {
+		closeShop(true);
+	}
+
+	private void closeShop(boolean closed) {
+		settings.writeSection(shop.getId(),
+				com.storefront.store.settings.SettingsSections.Checkout.class,
+				new com.storefront.store.settings.SettingsSections.Checkout(
+						!closed, 0L, false, true, true, null),
+				"checkout");
+	}
+
+	@Autowired
+	private com.storefront.store.settings.ShopSettingService settings;
+
 	// ------------------------------------------------------------------ quoting
 
 	@Nested

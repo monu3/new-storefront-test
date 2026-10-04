@@ -1490,11 +1490,21 @@ Section registry (~15 core sections first) · zod theme schema, versioned · `th
 
 ---
 
-### Phase 4 — Shop Operations (~2 weeks)
+### Phase 4 — Shop Operations (~2 weeks) — ✅ COMPLETE
 
 Orders board with filters, bulk status transitions, printable order view · **invoice generator** (PDF, configurable template) · discount system (percent/fixed/free-shipping, limits, expiry) · audience list with spend stats, CSV export, private notes · **media library** screen (all Cloudinary assets for the shop, grouped by usage) · full shop settings: general, address, social, checkout, notifications, order-number format, invoice template, email templates · payment method config incl. eSewa merchant ID/secret · low-stock notification.
 
 **Exit:** a shop runs its entire day-to-day operation without admin intervention.
+
+> **Status: complete.** 5,770 backend tests green, 0 skipped; all 10 frontend packages typecheck and
+> both apps build; `check-ui.mjs` reports ALL PAGES OK and the five screens were driven in a real
+> browser. The exit criterion is met — a shop can open and close itself, number its own orders,
+> discount, invoice, configure eSewa and bank transfer, see its audience and its low stock, and
+> manage its media without an admin.
+>
+> Most of the Phase 1 schema already existed; what was missing was the Java. Six bugs were found
+> and fixed along the way, two of them severe: `REQUIRES_NEW` bulk transitions that could not see
+> the caller's writes, and a settings save that made a shop unable to take orders. See Appendix W.
 
 ---
 
@@ -3747,3 +3757,540 @@ and a real login to reproduce, which is why it took four attempts.
 
 Standing process, now stated three times across appendices R, S and T: **a frontend change is not
 verified until someone signs in and lands on a real page.**
+
+---
+
+## Appendix U — Phase 4: orders board and product list, replicated from the reference
+
+Both pages built against the screenshots in `web/.ui-reference/`, with **pagination added to every
+list table** — the reference has none, and a table that renders every row stops rendering at a few
+hundred. Backend suite: **5,673 tests green**.
+
+### D87 — pagination is part of the table component, not something each page adds
+
+`packages/ui/data-table.tsx` owns it. Every list here grows without bound — orders, products,
+audience, customers — and making each page remember to paginate is how the reference ended up with
+unpaged lists.
+
+Three decisions:
+
+- **The page is a controlled prop, not internal state.** The URL carries it, so a bookmarked or
+  shared link opens on the same rows, and Back steps through pages actually visited.
+- **The range is shown, not just arrows.** "Page 3" does not tell an owner whether to go back or
+  forward; "Showing 41–60 of 218" does.
+- **Page size is selectable** (10/20/50/100), because an owner with 40 pages of orders does not
+  want to click next thirty times.
+
+### D88 — orders: the board defaults to what still needs the owner
+
+`GET /api/v1/shop/orders` returns the page **plus the per-status counts** that label each filter
+tab, in one request. Seven counts as seven separate queries is seven round trips to render one row
+of buttons.
+
+The default view excludes `DELIVERED`, `CANCELLED`, `REFUNDED` and `RETURNED`. Someone opening
+the board is asking "what needs me", and last month's delivered orders are not it. The tabs still
+reach everything.
+
+Search covers order number, customer name, phone, email and address in **one** native query —
+the fields live in two tables (`app_user` for a signed-in customer's own name), so four derived
+queries would need four round trips and a merge.
+
+Sort keys are **whitelisted**. An unvalidated sort property reaching `Pageable` is a 500 from the
+database on a column that does not exist.
+
+### D89 — the stock column shows *available*, not on hand
+
+`quantity_on_hand - quantity_reserved`. The table answers "what can I still promise?", and showing
+reserved stock as sellable is how an oversell happens. Summed across a product's variants, because
+the table has one Stock column; the product screen shows the per-variant breakdown.
+
+### D90 — a live product cannot be toggled from a table row
+
+The reference's table has a status switch. Ours renders it **disabled**, and that is deliberate:
+publishing requires a priced variant and a verified shop, and those rules belong on the product's
+own screen where they can be explained. A toggle in a table that silently refuses is worse than one
+that is visibly not interactive.
+
+Bulk selection is scoped to the **visible page**, and the UI says so. A "select all" that covered
+rows the owner cannot see is how bulk actions hit things nobody chose.
+
+### The silent-SSO bug, and what it cost
+
+Signing in worked; **refreshing logged you out**. `sessionStorage` was empty after every reload.
+
+Root cause was my own Phase 3 fix. I removed `onLoad: 'check-sso'` because it hung forever — it
+opens a hidden iframe at `silentCheckSsoRedirectUri` and waits for a callback, and **the console
+served no such page**, so the promise never settled and the console was white.
+
+Fixing the hang by dropping `onLoad` entirely fixed it by **never authenticating at all**: no
+tokens, nothing in `sessionStorage`, signed out on every reload. The reference avoids this because
+it ships `frontend/public/silent-check-sso.html` — which is just `parent.postMessage(location.href,
+location.origin)`. The adapter running in the parent reads the tokens from the message; the page
+needs no Keycloak code of its own.
+
+Both halves are now in place, and `check-ui.mjs` asserts the callback page is served and contains
+the `postMessage`. It is a four-line file that is easy to delete as unused, and there is no error
+at all until someone tries to sign in.
+
+### `RequireRole` was deciding before auth had answered
+
+It read `getSession()` synchronously on first render, which returns `{authenticated: false}` until
+`kc.init()` resolves. Harmless on a soft navigation — init had already run — but on a full reload
+it redirected a signed-in owner straight to `/login`. The symptom was "the dashboard works when I
+click into it, but refreshing bounces me out."
+
+It now distinguishes **"still loading"** from **"loaded, and the role is wrong"**. Collapsing those
+two states is what produced the bug: there is no difference between "not signed in yet" and "not
+signed in" until init has actually answered.
+
+### Two more bugs the screenshots caught
+
+- **Every page was titled "Dashboard".** The top-bar title used the first nav item whose path
+  *prefix-matched*, and `/shop` matches both "Dashboard" and the `/shop/orders` prefix. Longest
+  prefix wins now.
+- **A self-referencing Vite proxy.** Documenting `/silent-check-sso.html` in `server.proxy`
+  pointed it at the same server it was served from, so it 500'd. The file is in `public/` and
+  needs no proxy entry at all.
+
+### What is verified, in a real browser
+
+```
+ORDERS    h1=Orders    rows=2     tabs=7   pagination=yes   Showing 1–2 of 2
+PRODUCTS  h1=Products  rows=20    pagination=yes   Showing 1–20 of 1,011
+```
+
+The orders board shows real data: two accepted COD orders, `Ravi KC`, Rs. 900.00, status
+coloured by state. The product table pages over 1,011 rows at 20 per page.
+
+### Not yet built
+
+The order **detail** page and the **add-product form** — both screens have references in
+`.ui-reference/`, and both are straightforward now that the shell, the table and the API exist.
+
+---
+
+## Appendix V — Phase 4: order detail and the add-product form
+
+Two screens closed out the Phase 4 core. Both were built against references in `.ui-reference/`,
+and both turned up more bugs in the surrounding code than they did in themselves.
+
+### `authorizedFetch` had the wrong shape for every write
+
+The helper takes `(adapter, url, init)`, not `(adapter, url, body, method)`. Every write call site
+had been written against the shape it seemed like it should have, which is a type error three times
+over — the compiler caught all of them, but the fix is worth stating once:
+
+```ts
+export async function postJson(
+  adapter: AuthAdapter,
+  url: string,
+  body: unknown,
+  method: 'POST' | 'PATCH' | 'PUT' | 'DELETE' = 'POST',
+): Promise<Response>
+```
+
+It lives beside `authorizedFetch` in `packages/auth`. Three reasons it earns its place:
+
+- `method`, `headers` and `JSON.stringify` cannot be forgotten independently. Getting any one of
+  them wrong fails as a confusing HTTP 400 rather than a type error.
+- A caller cannot send `[object Object]`.
+- Endpoints that take **no** body — the order transitions — still pass `{}` explicitly. `postJson`
+  always serialises a body, so omitting the argument is a type error instead of a silent mismatch.
+
+### Case-sensitive substring matching decided which step the form showed
+
+`validate()` returned English strings. Choosing which step to jump to then meant
+`problem.includes('name')` — which is **case-sensitive**, and none of `'Product Name is required'`,
+`'Product Category is required'` or `'Product Description is required'` contains a lowercase `name`
+or `category`. Every lookup missed.
+
+The result was not a subtle one. Submitting the empty form listed four problems and then **navigated
+to the Inventory step**, hiding the four fields that were actually empty. The owner was told what was
+wrong in a block at the bottom of a screen that no longer showed the inputs.
+
+Validation now returns structured problems:
+
+```ts
+interface Problem {
+  step: string;                  // which step owns it
+  field: 'name' | 'category' | 'price' | 'stock' | ...;
+  message: string;               // shown to the owner
+}
+```
+
+The step is data, not prose. English can be reworded, capitalised or translated without changing
+which screen the form lands on. Each problem in the summary is also a button that jumps to its step.
+
+This is the same failure class as matching on a status **label** instead of the status: identity
+must never be carried in text that is meant for humans.
+
+### A `<label for>` pointed at a `<button>`
+
+The Radix `Select` trigger is a `<button role="combobox">`. Buttons are **not labelable elements**,
+so `<label htmlFor="product-category">` associates with nothing: clicking the label does not open the
+dropdown, and the trigger has no accessible name.
+
+The visible label is real and must stay real. It gets an `id`, and the trigger points back at it:
+
+```tsx
+<Field label="Product Category" labelId="product-category-label" required>
+  <Select value={category} onValueChange={setCategory}>
+    <SelectTrigger aria-labelledby="product-category-label">
+```
+
+`aria-label` would have worked and was the first thing tried, but it **silently overrides the
+visible text**. The label the owner can see is the one the control should be named by; if they ever
+disagree, the sighted owner and the screen-reader user are being told different things.
+
+`Field` now distinguishes `htmlFor` (real labelable inputs) from `labelId` (composite widgets).
+
+The same pass added the missing `htmlFor`/`id` pairs for every other field. Before this, `getByLabel`
+found **nothing** on the form — no input had an accessible name, so a screen reader announced
+"edit text, blank" with no hint of which field it was.
+
+### The dropdown was empty because the property was named wrong
+
+The server returns `CategoryOptions(shopType, allowed, inUse)`. The form read `meta.categories`.
+
+`meta?.categories ?? []` made a wrong property name indistinguishable from a shop that has no
+categories: an empty listbox, no error, no warning. Fixed to `allowed`, and an empty list now renders
+a disabled `No categories for {shopType} shops` row. **A list that cannot be empty must not render as
+one that is.**
+
+The categories come from the same validator the write path enforces (D18), so the shop is only ever
+offered the categories its type permits. The grocery shop behind `ops.test` is offered 10:
+`Rice, Lentil, Spices, Oil, …`
+
+### `noUncheckedIndexedAccess` versus `found[0].step`
+
+After the refactor the compiler objected that `found[0]` might be undefined, even though
+`found.length > 0` had just been checked. This one is left as the language intends: the compiler is
+right that it cannot prove the invariant, and destructuring
+
+```ts
+const [first] = found;
+if (first) { setStep(first.step); return; }
+```
+
+is both honest and no worse to read. It is not a rule to satisfy — it is the checker declining to
+take an assertion.
+
+### Verified in a real browser
+
+```
+empty submit      refused, 1 problem shown, stays on Product Information
+categories offered 10 -> Rice, Lentil, Spices, Oil
+after submit      path=/shop/products   page errors: none
+back on the board Showing 1–20 of 1,012   product present: true
+```
+
+Both pages were also walked end to end through `check-ui.mjs`: **ALL PAGES OK**. Ten packages
+typecheck; both apps build.
+
+### One test-script error worth recording
+
+Two of the failures above were in the check script, not the app, and both are the same trap:
+
+- `getByLabel('Product Name')` with a **plain string** is an *exact* match. The label reads
+  `Product Name*` (the required asterisk is rendered inside it), so it matched nothing and timed out.
+  `getByLabel(/Product Name/)` works. Use regexes in these scripts.
+- Adding `role="alert"` to each field error made `getByRole('alert')` **ambiguous** and throw, which
+  `.catch(() => null)` then reported as "no alert found". Target `.first()` on a locator instead.
+
+The recurring lesson: a check that silently reports "not found" when the thing it looked for is
+ambiguous is worse than no check, because it reads as a pass.
+
+### Still open
+
+- **Product media** — the dropzone is laid out and honest about not uploading yet. Signed
+  browser→Cloudinary uploads (D40) are the next pass; the `public_id` retention rule (D19) applies
+  from the first version, because deletion cannot be added afterwards.
+- **Receipt button** — disabled, with a title saying invoices arrive with Phase 4 reporting. It is
+  never a button that silently does nothing.
+- Reference pages still wanted from the user: Audience, Settings, Appearance.
+
+---
+
+## Appendix W — Phase 4 completed: the shop can run its day without an admin
+
+The phase-4 exit criterion is *"a shop runs its entire day-to-day operation without admin
+intervention."* This appendix records what closed that gap, and — more usefully — the six real bugs
+the work turned up, five of which were silent.
+
+### What was already there, and what was not
+
+The Phase 1 baseline schema anticipated nearly all of Phase 4: `shop_setting`, `discount`,
+`shop_payment_method`, `customer`, `order_number_sequence` and the eSewa credential columns all
+existed. What did not exist was **any Java for them**. Discounts had a domain entity and a
+quote-time engine but no owner-facing CRUD; settings, audience and payment configuration had no
+entity, no service and no endpoint; the `openpdf` dependency was present and entirely unused.
+
+So the shape of the work was narrower than the phase list suggests:
+
+| Item | State on arrival | Added |
+|---|---|---|
+| Discount system | entity + quote integration done | owner CRUD, validation, console |
+| Media library | full API done | console screen |
+| Invoice PDF | nothing (dependency only) | `InvoiceService`, endpoint, console |
+| Shop settings | table only | 8 typed sections, service, 8 endpoints |
+| Audience | table only | entity, service, list, notes, CSV |
+| Payment config | table only | entity, cipher, service, endpoint |
+| Bulk transitions | nothing | service + endpoint |
+| Low-stock notification | `/stock/low` only | crossing detection, outbox event |
+| Printable/receipt | nothing | invoice PDF |
+
+### `REQUIRES_NEW` cannot see the caller's uncommitted writes
+
+`BulkTransitionService` needs each order to commit or roll back on its own, so a single refused
+order cannot undo the ones that worked. The obvious implementation is `REQUIRES_NEW` per order.
+
+It is wrong, and the test suite is what showed it:
+
+```
+An order cannot go from PENDING to PROCESSING…   ← no, it said "not found"
+```
+
+Every order came back as though it did not exist. `REQUIRES_NEW` **suspends the caller's
+transaction**, so the inner one cannot see the outer one's uncommitted writes. In production the
+caller has no transaction, so it appeared to work; under a test transaction the fixtures were
+invisible. This is the same lesson `OrderNumberService` records at length — where the fix was to
+*join* the caller's transaction rather than escape it.
+
+The resolution inverts the usual advice:
+
+```java
+@Transactional(propagation = NOT_SUPPORTED)   // the batch: no transaction at all
+public BulkResult transition(...)             // so each call opens its own
+```
+
+and each single transition is plain `@Transactional`. Same per-order commit, one connection at a
+time instead of one per order, and it works under a test transaction because there isn't one.
+
+**A `REQUIRES_NEW` that works in production and fails in tests is not a test artefact. It is a bug
+that only has one customer.**
+
+### `shop_setting`'s order-number column could break checkout
+
+`shop_setting` rows are created lazily with `order_number = '{}'`. An owner who opened the settings
+screen and saved **any** tab therefore produced a row whose order number deserialised to a `null`
+format — and every subsequent checkout threw a `NullPointerException` from
+`OrderNumber.render`:
+
+```
+NullPointerException: Cannot invoke "String.replace(…)" because "this.format" is null
+```
+
+The shop became unable to sell because someone edited their support email.
+
+The fix is a compact constructor on `OrderNumber` that defaults `format` and `next`, which makes
+an empty section indistinguishable from an absent one — the invariant the entire read path assumes
+and which only held for *missing* sections. `ShopSettingService` already logged and degraded on
+unparseable JSON; `{}` is perfectly parseable, which is why it slipped through.
+
+There is now a named regression test for it.
+
+### Saving the settings 500'd, then 405'd
+
+Two separate failures, both in `postJson` usage:
+
+- **`postJson` defaults to `POST`; the settings endpoints are `PUT`.** The server answered
+  `HttpRequestMethodNotSupportedException: Request method 'POST' is not supported`, surfaced to the
+  owner as "The server rejected this (HTTP 405)". The 405 was the server being *correct* and the
+  client being wrong, in a way the error text could not explain.
+- **The "Saved" banner never appeared**, because saving invalidated the settings query, which
+  refetched, which changed the draft fingerprint, which reset `saved` in the effect. The
+  confirmation appeared and vanished in the same tick. Fix: `set` clears `saved` (the owner edited
+  again), the effect does not (the server confirmed).
+
+### `Page<T>` meant two different things
+
+`client.ts` exports `Page<T>` as a **cursor** page (`items`, `nextCursor`, `hasMore`).
+Phase 4's endpoints return **offset** pages (`content`, `page`, `totalPages`). Adding a second
+`Page<T>` made `import { Page } from '@store-app/api-client'` ambiguous for every caller, and the
+compiler's fix — an explicit re-export — has to be repeated at each import site, which is the
+arrangement where one eventually gets it wrong.
+
+The new one is `OffsetPage<T>`. Two shapes, two names.
+
+### The audience summary projected `Long` sums into `int` fields
+
+`/audience/summary` returned 400 for every request:
+
+```
+select coalesce(sum(c.totalSpentMinor), 0), coalesce(sum(c.totalOrders), 0), count(c)
+```
+
+`SUM` and `COUNT` both return `Long`. Coalescing them against an `int` literal `0` is a type
+mismatch, and projecting them into `int` record fields fails exactly when the numbers get large —
+which is the shop this screen matters most to. Every field is now `long` and the fallbacks are `0L`.
+
+### Two checks that lied
+
+Both are in this appendix because a check that reports "not found" when it actually failed is
+worse than no check — it reads as a pass.
+
+- `findByShopIdOrderByLastOrderAtDescNullsLast` does not exist as a derived query. Spring Data
+  reads `NullsLast` as a **property name** and fails at startup. The one sort that matters most on
+  the audience screen — never-ordered customers last, not first — needed a hand-written `@Query`.
+- A service test signed in with a `UsernamePasswordAuthenticationToken`. `CurrentUser` reads the
+  principal *as a `Jwt`* and returns null for anything else, so every call looked anonymous and
+  `TenantGuard` answered "This account does not own a shop" for all of them. And the JWT `sub` must
+  be the owner's **Keycloak subject**, not their database id: `IdentitySyncService` resolves by
+  subject and creates a *new* user when nothing matches, producing a second user who owns nothing.
+  The symptom points at the shop, not at the token.
+
+### Two deliberate API choices worth defending
+
+**Discounts have no delete, only pause.** Deleting resets `usage_used`, so a campaign redeployed
+next season would let every customer who already used it use it again. The endpoint is `DELETE` in
+the path and a pause in the body, and the response carries the reason.
+
+**The audience CSV omits private notes.** An export is the artefact most likely to be emailed or
+pasted into a spreadsheet. An owner's private annotation about a real person has no business
+travelling that way. It is also capped at 10,000 rows, and the response says so in
+`X-Export-Truncated` — a silently shortened customer list is worse than no export, because the owner
+would reconcile against the wrong number.
+
+### Money never crosses a float boundary
+
+Every Phase 4 amount is a `bigint` of paisa end to end. Three places where that is load-bearing:
+
+- **Discount values.** `PERCENT` is stored in basis points. A percentage taken as a raw `10` and
+  scaled somewhere downstream is how "10% off" becomes 1000% or 0.1%.
+- **CSV.** Names are quoted through a helper, because `Sharma, Priya` unquoted shifts every value
+  after it onto the wrong customer.
+- **The invoice.** Amounts come from the order's frozen snapshot, never from the current catalogue,
+  so a later price change or product rename cannot rewrite an already-issued invoice.
+
+### Secrets are write-only
+
+`SecretCipher` is AES-256-GCM with a random 96-bit nonce per encryption, stored in front of the
+ciphertext. GCM rather than CBC because the key protects money-routing instructions: a bank account
+number that decrypts to a *different* account number sends someone's payment elsewhere with nothing
+to notice it, and CBC would return plausible bytes for a modified ciphertext.
+
+The API accepts `esewaSecret` and returns `hasSecret: true`. **A console that is never sent a
+secret cannot leak it** — not into a network log, a React state dump, or a screenshot of the
+settings page. Saving with the field blank keeps the stored value; forgetting it is a separate,
+two-step, irreversible call.
+
+With no `STORE_SECRETS_KEY` configured the cipher **refuses** and names the variable. Generating a
+random key would lose every secret on restart; shipping a default in the jar would mean every
+deployment shares one. The settings screen disables the fields and says why.
+
+### Verified
+
+```
+backend      5,770 tests, 0 failures, 0 skipped (was 5,673 at the start of Phase 4)
+frontend     10/10 packages typecheck; console + customer build
+check-ui.mjs ALL PAGES OK
+browser      5 screens render, 0 console errors
+             discount created, listed, and an impossible cap refused by the server
+             settings saved and survived a reload
+             eSewa refused to be enabled half-configured
+             invoice downloaded through the UI as %PDF-1.5
+             bulk selection and partial-result toast verified
+```
+
+### Phase 4 reference screens the user still owes
+
+Four screens had no screenshot in `.ui-reference/` (Audience, Settings, Discounts, Media) and were
+built to the existing console shell's tokens and primitives, on the user's instruction. They are
+consistent with the referenced screens but are not verified against them.
+
+---
+
+## Appendix X — two faults hiding each other in the theme editor
+
+A final sweep of all nine console screens — rather than only the ones I had just changed — turned
+up a crash on the Appearance page that had been there since Phase 3. Two independent bugs, and
+**either one alone would have hidden the other.**
+
+### The shared API client never sent a token
+
+`packages/api-client`'s `request()` built its headers, set `Accept`, set `Content-Type` and sent
+it. It never set `Authorization`. Every authenticated endpoint reached through `api` therefore
+answered 401.
+
+This was invisible for a long time because almost nothing used `api` for protected routes — the
+Phase 4 screens all use `authorizedFetch` from `@store-app/auth`, which does attach the token. The
+one place that used `api` was the theme editor, whose failure mode is to render an empty page
+rather than an error. So "the appearance page shows nothing" looked like a theme problem for two
+phases.
+
+The fix is an explicit seam rather than a hard dependency:
+
+```ts
+let tokenProvider: (() => Promise<string | null>) | null = null;
+export function setTokenProvider(provider: (() => Promise<string | null>) | null): void
+```
+
+A **function**, not a token string. The Keycloak access token expires and must be refreshed on
+use; registering the string once means every request after the first refresh carries an expired
+token, which presents as a page that worked for ten minutes and then started 401ing.
+
+Left unset, requests are anonymous — which is correct for the SSR storefront (public endpoints, no
+interactive session) and for the shop-type and category pickers.
+
+### The renderer called a setter on its parent mid-render
+
+With the theme page finally loading a real theme, it crashed immediately:
+
+```
+Maximum update depth exceeded
+  at ThemeRenderer (packages/theme-engine/src/render.tsx)
+```
+
+`ThemeRenderer` had an `onIssues` prop and invoked it **in its render body**. That is `setState` in
+the parent while the child renders, which React rejects outright. Worse, `parseTheme` returns a
+*fresh* `issues` array each time, so the parent's new state re-rendered the child, which called
+`onIssues` again — an unbounded loop.
+
+The tempting fix is to move the call into a `useEffect`. **That would have been wrong**, because the
+file's own contract is at the top of it:
+
+> A pure server component: … No fetching, no hooks, no effects — which is what makes the page
+> indexable and share-previewable (D1)
+
+Adding a hook to satisfy a prop would have quietly broken the reason the renderer exists: the
+editor preview and the live storefront call the *same function*, and a hook would have made them
+diverge the moment one of them rendered differently.
+
+So `onIssues` was **removed**. A component cannot both report and stay pure; reporting belongs to
+the caller. The editor — a client component, where hooks are fine — now parses the same document
+with the same exported `parseTheme` and reads the issues itself:
+
+```ts
+useEffect(() => {
+  if (!draft) return;
+  setIssues(parseTheme(JSON.stringify(draft)).issues);
+}, [draft]);
+```
+
+The editor's list and the storefront's inline `<ThemeIssues>` notice therefore cannot disagree
+about what is wrong, and `ThemeRenderer` is pure again. The prop is gone rather than deprecated,
+because a prop that is illegal to use correctly is a trap.
+
+### The lesson, which is the transferable part
+
+Neither bug was findable by testing the thing you changed. Both were found by **listing every
+screen and looking at all of them**, including the ones untouched for two phases.
+
+And the failure was *compositional*: the 401 meant the renderer was never reached with a real theme,
+so the loop could not fire. Fixing the 401 exposed the loop. Had the second fix reintroduced an
+existing behaviour — which the "just move it into an effect" instinct would have done — the
+loop would have returned silently and nobody would have known why.
+
+Also worth recording: the sweep initially reported the dashboard as failing because it tested
+`/shop/dashboard`. That route does not exist; the dashboard is `/shop`. A check with a wrong URL
+produces a confident false negative, which is the same failure mode as the "no alert found" case in
+Appendix V.
+
+### Final state
+
+```
+backend      5,770 tests, 0 failures, 0 skipped
+frontend     10/10 packages typecheck; console + customer build
+check-ui.mjs ALL PAGES OK (storefront + console)
+9/9 console screens render with zero console errors, zero 4xx/5xx
+```

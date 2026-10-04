@@ -41,7 +41,7 @@ import lombok.Setter;
 @Entity
 @Table(name = "discount")
 @Getter
-@Setter(AccessLevel.PACKAGE)
+@Setter(AccessLevel.PUBLIC)
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 public class Discount extends BaseEntity {
 

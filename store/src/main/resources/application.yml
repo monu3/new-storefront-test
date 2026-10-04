@@ -67,6 +67,13 @@ spring:
 # Application settings
 # ==============================================================================
 store:
+  # Merchant-secret encryption passphrase for eSewa and bank details. Deliberately has no
+  # default: without it, PaymentMethodService refuses to store secrets and says so, which is far
+  # better than a well-known key in the jar that every deployment would share. Set it to a real
+  # secret in application-local.yml or the environment.
+  secrets:
+    key: ${STORE_SECRETS_KEY:}
+
   # Outbox relay (R5). Set enabled=false to run without RabbitMQ: the order flow still works and
   # events accumulate unpublished, which is the designed behaviour rather than a failure.
   themes:
