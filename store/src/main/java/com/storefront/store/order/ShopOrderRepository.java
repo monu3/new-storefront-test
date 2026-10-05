@@ -27,6 +27,42 @@ public interface ShopOrderRepository extends JpaRepository<ShopOrder, UUID> {
 
 	Page<ShopOrder> findByCustomerIdOrderByPlacedAtDesc(UUID customerId, Pageable pageable);
 
+	// ---- the customer portal (Phase 5)
+
+	/**
+	 * One customer's orders at one shop, newest first.
+	 *
+	 * <p>Scoped by shop as well as customer. Order numbers are allocated per shop, so
+	 * {@code ORD-0001} exists in every shop, and a customer-order lookup that ignored the shop
+	 * could return — or link to — an order belonging to a shop the customer does not use.
+	 */
+	Page<ShopOrder> findByCustomerIdAndShopIdOrderByPlacedAtDesc(
+			UUID customerId, UUID shopId, Pageable pageable);
+
+	/** One of a customer's orders at one shop, by its number. Empty rather than throwing. */
+	java.util.Optional<ShopOrder> findByCustomerIdAndShopIdAndOrderNumber(
+			UUID customerId, UUID shopId, String orderNumber);
+
+	/**
+	 * Orders a customer can reorder from.
+	 *
+	 * <p>Excludes cancelled and delivered. Reordering a cancelled order would resurrect goods the
+	 * customer walked away from, and reordering a delivered one is almost always a mistake -- they
+	 * wanted to *check* the status, not buy it twice.
+	 */
+	java.util.List<ShopOrder> findByCustomerIdAndShopIdAndStatusNotInOrderByPlacedAtDesc(
+			UUID customerId, UUID shopId, java.util.Collection<ShopOrder.Status> statuses);
+
+	/**
+	 * The orders still in play for this customer, for the "track your parcel" strip.
+	 *
+	 * <p>Deliberately unbounded in count and bounded in age instead: a customer who ordered six
+	 * months ago does not need their parcel tracked, and a query that scanned their whole history
+	 * every time the storefront loaded would grow without limit.
+	 */
+	java.util.List<ShopOrder> findByCustomerIdAndStatusInOrderByPlacedAtDesc(
+			UUID customerId, java.util.Collection<ShopOrder.Status> statuses);
+
 	Page<ShopOrder> findByShopIdAndStatusOrderByPlacedAtDesc(UUID shopId, ShopOrder.Status status,
 			Pageable pageable);
 

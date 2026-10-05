@@ -67,12 +67,19 @@ spring:
 # Application settings
 # ==============================================================================
 store:
+  storefront:
+    # Where eSewa sends the customer back to, and the base for shareable shop links.
+    # Server-configured on purpose: a payment return url the browser can influence is an open
+    # redirect, and an open redirect on a payment page is a phishing page.
+    base-url: ${STOREFRONT_BASE_URL:http://localhost:3000}
+
   # Merchant-secret encryption passphrase for eSewa and bank details. Deliberately has no
   # default: without it, PaymentMethodService refuses to store secrets and says so, which is far
   # better than a well-known key in the jar that every deployment would share. Set it to a real
   # secret in application-local.yml or the environment.
   secrets:
     key: ${STORE_SECRETS_KEY:}
+
 
   # Outbox relay (R5). Set enabled=false to run without RabbitMQ: the order flow still works and
   # events accumulate unpublished, which is the designed behaviour rather than a failure.
@@ -111,13 +118,28 @@ store:
     api-key: ${CLOUDINARY_API_KEY:}
     api-secret: ${CLOUDINARY_API_SECRET:}
 
+  # eSewa (D11, live from Phase 5). The sandbox hosts are the defaults so the integration works
+  # with no configuration; production sets ESEWA_FORM_URL and ESEWA_STATUS_URL.
+  #
+  # The form and the status API are on DIFFERENT hosts in UAT -- the status path under
+  # rc-epay answers 404 -- which is a confusing way to find out.
   esewa:
-    merchant-id: ${ESEWA_MERCHANT_ID:}
-    secret: ${ESEWA_SECRET:}
+    enabled: ${ESEWA_ENABLED:true}
+    merchant-id: ${ESEWA_MERCHANT_ID:EPAYTEST}
+    # Only the fallback for a shop that has configured no credential of its own. A real
+    # deployment keeps the secret per shop, encrypted, in shop_payment_method.
+    merchant-secret: ${ESEWA_MERCHANT_SECRET:}
+    form-url: ${ESEWA_FORM_URL:https://rc-epay.esewa.com.np/api/epay/main/v2/form}
+    status-url: ${ESEWA_STATUS_URL:https://rc.esewa.com.np/api/epay/transaction/status/}
+    # Short on purpose: the customer's browser is parked on our return page while this runs.
+    timeout-seconds: ${ESEWA_TIMEOUT_SECONDS:20}
 
   firebase:
+    enabled: ${FIREBASE_ENABLED:false}
     project-id: ${FIREBASE_PROJECT_ID:}
-    credentials: ${FIREBASE_CREDENTIALS:}
+    # A file path, not inline JSON: a multi-line PEM inside YAML needs escaping, and one wrong
+    # indentation produces a key that parses to the wrong thing.
+    credentials-path: ${FIREBASE_CREDENTIALS_PATH:}
 
   mail:
     host: ${SMTP_HOST:localhost}

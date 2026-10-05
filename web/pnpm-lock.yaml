@@ -123,6 +123,9 @@ importers:
       '@store-app/validation':
         specifier: workspace:*
         version: link:../../packages/validation
+      lucide-react:
+        specifier: ^0.468.0
+        version: 0.468.0(react@19.3.0)
       next:
         specifier: ^15.1.3
         version: 15.5.27(@types/node@22.20.5)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)

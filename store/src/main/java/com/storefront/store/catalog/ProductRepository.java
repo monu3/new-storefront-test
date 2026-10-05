@@ -23,7 +23,7 @@ import org.springframework.data.repository.query.Param;
  * soft-deleted product must still be loadable by id so the shop can restore it or an order can
  * resolve it.
  */
-public interface ProductRepository extends JpaRepository<Product, UUID> {
+public interface ProductRepository extends JpaRepository<Product, UUID>, PublicSearchRepository {
 
 	Optional<Product> findByIdAndDeletedAtIsNull(UUID id);
 

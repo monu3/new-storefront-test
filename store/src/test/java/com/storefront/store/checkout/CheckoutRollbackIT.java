@@ -22,6 +22,7 @@ import com.storefront.store.catalog.ProductVariant;
 import com.storefront.store.catalog.ShopType;
 import com.storefront.store.inventory.InventoryService;
 import com.storefront.store.order.ShopOrder;
+import com.storefront.store.payment.BankTransferGateway;
 import com.storefront.store.shop.Shop;
 import com.storefront.store.shop.ShopRepository;
 import com.storefront.store.support.TestConfig;
@@ -100,9 +101,11 @@ class CheckoutRollbackIT {
 	void paymentFailureCommitsNothing() {
 		setUpShopWithStock();
 
-		assertThatThrownBy(() -> checkout.place(guestOrder(ShopOrder.PaymentMethod.ESAWA)))
-				.isInstanceOf(UnsupportedOperationException.class)
-				.hasMessageContaining("not available yet");
+		// eSewa was the convenient failure here while it was a stub. It is live now, so the failure
+		// is bank transfer at a shop with no account details -- which fails at the same point in
+		// the transaction, after the order and its reservation exist.
+		assertThatThrownBy(() -> checkout.place(guestOrder(ShopOrder.PaymentMethod.BANK_TRANSFER)))
+				.isInstanceOf(BankTransferGateway.PaymentConfigurationException.class);
 
 		// Counted from the database, after the transaction has rolled back. This is the assertion
 		// a @Transactional test cannot make.
@@ -123,8 +126,8 @@ class CheckoutRollbackIT {
 		// visibly their first order.
 		setUpShopWithStock();
 
-		assertThatThrownBy(() -> checkout.place(guestOrder(ShopOrder.PaymentMethod.ESAWA)))
-				.isInstanceOf(UnsupportedOperationException.class);
+		assertThatThrownBy(() -> checkout.place(guestOrder(ShopOrder.PaymentMethod.BANK_TRANSFER)))
+				.isInstanceOf(BankTransferGateway.PaymentConfigurationException.class);
 
 		// Now a successful order: it must be the first number, not the second.
 		ShopOrder order = checkout.place(guestOrder(ShopOrder.PaymentMethod.COD)).order();
@@ -143,8 +146,8 @@ class CheckoutRollbackIT {
 		setUpShopWithStock();
 		UUID shopId = shop.getId();
 
-		assertThatThrownBy(() -> checkout.place(guestOrder(ShopOrder.PaymentMethod.ESAWA)))
-				.isInstanceOf(UnsupportedOperationException.class);
+		assertThatThrownBy(() -> checkout.place(guestOrder(ShopOrder.PaymentMethod.BANK_TRANSFER)))
+				.isInstanceOf(BankTransferGateway.PaymentConfigurationException.class);
 
 		Long eventsForShop = jdbc.queryForObject(
 				"SELECT count(*) FROM outbox_event e "

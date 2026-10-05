@@ -1,5 +1,6 @@
 package com.storefront.store.order;
 
+import java.util.Collection;
 import java.util.List;
 import java.util.UUID;
 
@@ -21,6 +22,16 @@ public interface OrderItemRepository extends JpaRepository<OrderItem, UUID> {
 
 	/** What customers who bought this also bought. Phase 5. */
 	List<OrderItem> findByProductId(UUID productId);
+
+	/**
+	 * The items for a product across a set of orders.
+	 *
+	 * <p>Used to decide whether a customer may call their review "verified purchase". The set is
+	 * this customer's own orders, so the query proves both halves at once: that the product was
+	 * bought <em>and</em> that it was bought by this customer. Walking every line of every order and
+	 * filtering in memory would be the same answer with a full scan.
+	 */
+	List<OrderItem> findByProductIdAndOrderIdIn(UUID productId, Collection<UUID> orderIds);
 
 	/**
 	 * Line counts for a page of orders, in one query.

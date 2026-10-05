@@ -181,6 +181,24 @@ public class SecurityConfig {
 						// returns a RequestMatcher, not a builder.
 						.requestMatchers("/api/v1/checkout/**")
 						.permitAll()
+						// Push registration, and only the registration.
+						//
+						// A service worker obtains an FCM token after the page loads, which is
+						// usually before anybody signs in -- a first visit to a storefront is
+						// exactly when a token arrives. Requiring authentication would move
+						// registration onto the account page, which customers never visit, and
+						// order-status push would then reach only people who had already found
+						// their way to settings.
+						//
+						// Safe because an unattached token belongs to nobody: the fan-out query
+						// is keyed by user, so a token registered signed out can never be sent
+						// anything until a customer signs in and claims it.
+						//
+						// Scoped to POST deliberately. GET lists the caller's own devices and
+						// DELETE stops sending to one; both disclose or change something that
+						// needs an identity, so they stay behind anyRequest().authenticated().
+						.requestMatchers(HttpMethod.POST, "/api/v1/customer/devices")
+						.permitAll()
 						// A server-side error is dispatched back through the filter chain with the
 						// original request. On a public endpoint that means anyRequest() fires
 						// against a request with no token, and a 500 is reported to the caller as a

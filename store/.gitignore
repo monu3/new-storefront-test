@@ -4,6 +4,7 @@ target/
 ### Local secrets — never commit ###
 src/main/resources/application-local.yml
 .env
+.firebase-credentials.json
 .env.local
 .mvn/wrapper/maven-wrapper.jar
 !**/src/main/**/target/

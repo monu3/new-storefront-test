@@ -350,13 +350,28 @@ class CheckoutServiceIT {
 	class Payments {
 
 		@Test
-		@DisplayName("eSewa is refused with a message, because the gateway is a stub")
-		void esewaIsRefused() {
-			// Refusing is better than a redirect to nowhere: the customer has already entered
-			// their details by this point.
-			assertThatThrownBy(() -> checkout.place(request(ShopOrder.PaymentMethod.ESAWA)))
-					.isInstanceOf(UnsupportedOperationException.class)
-					.hasMessageContaining("not available yet");
+		@DisplayName("eSewa places an order and records a gateway reference")
+		void esewaPlacesTheOrder() {
+			// Phase 5. This used to assert the opposite -- that eSewa was refused because the
+			// gateway was a stub -- and the stub is gone.
+			//
+			// The order is placed PENDING, never paid: the only thing that may mark an order paid is
+			// a server-to-server status query, and a form submission is not that.
+			var placement = checkout.place(request(ShopOrder.PaymentMethod.ESAWA));
+
+			assertThat(placement.order().getStatus()).isEqualTo(ShopOrder.Status.PENDING);
+			assertThat(placement.order().getPaymentStatus())
+					.isNotEqualTo(ShopOrder.PaymentStatus.PAID);
+
+			// The reference is the transaction uuid eSewa will know the payment by, and it is
+			// derived from the order number so a retry reuses it.
+			var transaction = payments.findAll().stream()
+					.filter(t -> t.getOrderId().equals(placement.order().getId()))
+					.findFirst()
+					.orElseThrow(() -> new AssertionError("no payment transaction recorded"));
+			assertThat(transaction.getGatewayRef())
+					.isNotNull()
+					.contains(placement.order().getOrderNumber().replaceAll("[^A-Za-z0-9-]", ""));
 		}
 
 		@Test
@@ -377,8 +392,11 @@ class CheckoutServiceIT {
 			// Whether a refusal rolls the order back can only be asserted in a test that COMMITS:
 			// inside @Transactional the insert has been flushed but not committed, so counting rows
 			// here would prove nothing either way. See CheckoutRollbackIT for the real assertion.
-			assertThatThrownBy(() -> checkout.place(request(ShopOrder.PaymentMethod.ESAWA)))
-					.isInstanceOf(UnsupportedOperationException.class);
+			//
+			// Bank transfer at a shop with no account details, because eSewa is live and no longer
+			// refuses -- it used to be the convenient stub for exactly this.
+			assertThatThrownBy(() -> checkout.place(request(ShopOrder.PaymentMethod.BANK_TRANSFER)))
+				.isInstanceOf(com.storefront.store.payment.BankTransferGateway.PaymentConfigurationException.class);
 		}
 	}
 }

@@ -56,6 +56,32 @@ export interface AuthSession {
   accessToken?: string;
 }
 
+/**
+ * Where a login was heading, across the Keycloak round trip.
+ *
+ * <p>Session storage rather than a query parameter: the destination is a local path, and putting it
+ * in the URL would mean it survives into the browser history and into Keycloak's own logs.
+ */
+export const RETURN_TO_KEY = 'store-app:return-to';
+
+/**
+ * Reads and clears the stored post-login destination.
+ *
+ * <p>Cleared on read, so a later sign-in does not send somebody to a page they were on hours ago.
+ */
+export function takeReturnTo(): string | null {
+  try {
+    const stored = window.sessionStorage.getItem(RETURN_TO_KEY);
+    window.sessionStorage.removeItem(RETURN_TO_KEY);
+    // Only a same-origin path is honoured: a stored absolute URL would turn the login link into an
+    // open redirect.
+    if (!stored || !stored.startsWith('/') || stored.startsWith('//')) return null;
+    return stored;
+  } catch {
+    return null;
+  }
+}
+
 export interface AuthAdapter {
   init(): Promise<boolean>;
   login(returnTo?: string): Promise<void>;
@@ -204,8 +230,27 @@ export function createKeycloakAdapter(config: AuthConfig): AuthAdapter {
     },
 
     async login(returnTo?: string) {
+      // The destination is remembered, not sent.
+      //
+      // <p>Keycloak validates `redirect_uri` against the client's registered list and refuses
+      // anything else with "Invalid parameter: redirect_uri". Passing a path here -- which is what
+      // `returnTo` looks like -- therefore fails every time, and the customer is left on a blank
+      // page with a Keycloak error rather than being signed in.
+      //
+      // <p>So the registered URI is always sent, and the destination is stashed for the shell to
+      // read after the redirect lands. That is also the only arrangement that survives a reload
+      // mid-flow.
+      if (returnTo) {
+        try {
+          window.sessionStorage.setItem(RETURN_TO_KEY, returnTo);
+        } catch {
+          // Private browsing, or a full quota. Losing the destination is a small annoyance;
+          // failing the login over it would not be.
+        }
+      }
+
       await kc.login({
-        redirectUri: returnTo ?? config.redirectUri,
+        redirectUri: config.redirectUri,
         maxAge: 60 * 30,
         // Asking for these puts the roles in the token the backend reads.
         scope: 'openid profile email',

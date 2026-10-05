@@ -39,6 +39,7 @@ public class NotificationWorker {
 	private final EmailSender emailSender;
 	private final ShopRepository shops;
 	private final ObjectMapper json;
+	private final com.storefront.store.customer.DeviceService deviceService;
 
 	@RabbitListener(queues = NotificationTopology.EMAIL_QUEUE)
 	@Transactional
@@ -76,6 +77,42 @@ public class NotificationWorker {
 			// the email in its data. Phase 5 replaces this with a real customer row.
 			storeNotification(Notification.Audience.CUSTOMER, null, shopId, type, title, body,
 					customerEmail);
+		}
+
+		// Push, for the customer who signed in. Guests have no account and therefore no devices,
+		// which is why this is addressed by user id rather than by email.
+		pushOrderStatus(event, shopId, orderNumber, title, body);
+	}
+
+	/**
+	 * The push half of an order-status notification.
+	 *
+	 * <p>Separate from the email above because the two have different failure modes and different
+	 * audiences: an email failure is retried by the outbox, and a push failure is logged and
+	 * dropped. A customer who has push blocked, or no device registered, or is offline still sees
+	 * the same state in the app, so push can never be the only delivery route.
+	 *
+	 * <p>Called after the email has been recorded rather than instead of it: the email is the
+	 * durable record, and push is the thing that saves the customer a page load.
+	 */
+	private void pushOrderStatus(JsonNode event, UUID shopId, String orderNumber,
+			String title, String body) {
+
+		UUID userId = uuid(event, "customerUserId");
+		String shopSlug = text(event, "shopSlug");
+		if (userId == null || shopSlug == null) {
+			// An event with no signed-in customer has nobody to push to. Not an error: most orders
+			// on this platform are guests.
+			return;
+		}
+
+		try {
+			deviceService.notifyOrderStatus(userId, shopSlug, orderNumber, title, body);
+		} catch (RuntimeException ex) {
+			// Never propagated. This runs inside the notification consumer, and letting a push
+			// failure escape would requeue the message and re-send the email to a customer who
+			// already has it.
+			log.warn("Could not send the order-status push for {}: {}", orderNumber, ex.getMessage());
 		}
 	}
 

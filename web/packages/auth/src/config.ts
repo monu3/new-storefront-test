@@ -59,6 +59,14 @@ export function readEnv(key: string): string | undefined {
   return viteEnv?.[key];
 }
 
+/**
+ * The development Keycloak, used when no URL is configured.
+ *
+ * <p>Named once because two apps' configs fall back to it and the two previously repeated the
+ * literal independently.
+ */
+const DEFAULT_KEYCLOAK_URL = 'https://auth-master.yenyasoft.com';
+
 function env(key: string, fallback: string): string {
   const value = readEnv(key);
   if (!value) {
@@ -77,18 +85,45 @@ function env(key: string, fallback: string): string {
  * enforces the redirect URI list server-side, so a customer token cannot be obtained here.
  */
 export const consoleAuthConfig: AuthConfig = {
-  baseUrl: env('VITE_KEYCLOAK_URL', 'https://auth-master.yenyasoft.com'),
+  // Getters, not plain values.
+  //
+  // <p>Both configs live in this shared package, so importing `@store-app/auth` evaluates *both*.
+  // With plain values the customer app's build threw `Missing required env var: VITE_KEYCLOAK_URL` —
+  // a variable it has no use for — because evaluating `consoleAuthConfig` ran `env()` for the
+  // console's own variable, and `env()` is a hard failure in production by design.
+  //
+  // <p>Deferring each read to first access means an app only ever resolves its own variables, while
+  // a missing one still fails hard. The object shape is unchanged, so no call site moves.
+  get baseUrl() {
+    return env('VITE_KEYCLOAK_URL', DEFAULT_KEYCLOAK_URL);
+  },
   realm: REALM.OPS,
-  clientId: env('VITE_KEYCLOAK_OPS_CLIENT_ID', 'store-app-console'),
-  redirectUri: env('VITE_APP_URL', 'http://localhost:5173'),
-  postLogoutRedirectUri: env('VITE_APP_URL', 'http://localhost:5173'),
+  get clientId() {
+    return env('VITE_KEYCLOAK_OPS_CLIENT_ID', 'store-app-console');
+  },
+  get redirectUri() {
+    return env('VITE_APP_URL', 'http://localhost:5173');
+  },
+  get postLogoutRedirectUri() {
+    return env('VITE_APP_URL', 'http://localhost:5173');
+  },
 };
 
 /** Customer portal config. */
 export const customerAuthConfig: AuthConfig = {
-  baseUrl: env('NEXT_PUBLIC_KEYCLOAK_URL', 'https://auth-master.yenyasoft.com'),
+  // Lazy for the same reason as the console config above: the shared package must not require the
+  // other app's variables to be present.
+  get baseUrl() {
+    return env('NEXT_PUBLIC_KEYCLOAK_URL', DEFAULT_KEYCLOAK_URL);
+  },
   realm: REALM.CUSTOMERS,
-  clientId: env('NEXT_PUBLIC_KEYCLOAK_CLIENT_ID', 'store-app-customer-web'),
-  redirectUri: env('NEXT_PUBLIC_APP_URL', 'http://localhost:3000'),
-  postLogoutRedirectUri: env('NEXT_PUBLIC_APP_URL', 'http://localhost:3000'),
+  get clientId() {
+    return env('NEXT_PUBLIC_KEYCLOAK_CLIENT_ID', 'store-app-customer-web');
+  },
+  get redirectUri() {
+    return env('NEXT_PUBLIC_APP_URL', 'http://localhost:3000');
+  },
+  get postLogoutRedirectUri() {
+    return env('NEXT_PUBLIC_APP_URL', 'http://localhost:3000');
+  },
 };

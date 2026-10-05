@@ -1508,7 +1508,7 @@ Orders board with filters, bulk status transitions, printable order view · **in
 
 ---
 
-### Phase 5 — Customer Portal Completion (~2 weeks)
+### Phase 5 — Customer Portal Completion (~2 weeks) — IN PROGRESS
 
 **eSewa gateway live** with server-to-server verification and callback (D11) · customer account: order history, tracking timeline, reorder · addresses CRUD · follow/unfollow shops · product reviews and ratings · search · wishlist · **gallery polish: browse by shop type and by product category** (the D17 payoff — a customer can find all pharmacies, or all medicine) · sorting, empty and error states · Firebase push for order status · Nepali localization scaffolding.
 
@@ -4293,4 +4293,376 @@ backend      5,770 tests, 0 failures, 0 skipped
 frontend     10/10 packages typecheck; console + customer build
 check-ui.mjs ALL PAGES OK (storefront + console)
 9/9 console screens render with zero console errors, zero 4xx/5xx
+```
+
+---
+
+## Appendix Y — eSewa, and the documentation that lies
+
+Phase 5's exit criterion says a customer can "order via eSewa". This appendix records the single
+most misleading piece of vendor documentation encountered in the project, and what was actually
+verified.
+
+### Three of eSewa's four published examples are wrong
+
+eSewa's developer pages publish four worked signature examples. Recomputing all four shows that
+**three do not match the algorithm the same pages describe**:
+
+```
+HMAC-SHA256 over bare values      "110241028EPAYTEST"        → GaTJxAh6ob/…   ≠ published
+HMAC-SHA256 over key=value pairs  "total_amount=110,trans…"  → i94zsd3oXF6Zs…  = published ✓
+```
+
+The third — the one the user's own integration notes carried — is the only correct example on the
+page. An implementer who copies the page faithfully writes a gateway that fails **every** payment
+with:
+
+```json
+{"code":"ES104","message":"Invalid payload signature."}
+```
+
+and the documentation gives them nothing to work with. The two other examples (one on the algorithm
+page, one in the demo form-data) fail against both schemes, so they cannot be rescued by guessing
+a different one.
+
+### The scheme, once established
+
+```
+message   = "total_amount=100,transaction_uuid=241028,product_code=EPAYTEST"
+signature = base64( HMAC-SHA256( message, merchantSecret ) )
+```
+
+The message is **comma-separated `key=value` pairs** in the order named by `signed_field_names` — not
+the bare concatenation of the values. That single distinction is the whole bug, and the stale
+examples obscure it precisely because they look like the concatenation.
+
+### Verified live, not read off a web page
+
+```
+POST https://rc-epay.esewa.com.np/api/epay/main/v2/form   signed  → HTTP 200, eSewa's login page
+GET  .../api/epay/transaction/status/?transaction_uuid=…    → {"status":"PENDING", …}
+```
+
+The second call is the important one: eSewa reports the transaction **it** created for **our**
+signed form. That is ground truth, and it is why `EsewaSignatureTest` pins the expected value
+rather than merely asserting the function returns a non-empty string.
+
+The form and the status API also live on **different hosts** in UAT (`rc-epay` and `rc`). The status
+path under `rc-epay` answers 404, which is a thoroughly confusing way to discover that.
+
+### What is *not* verified, and why it does not put money at risk
+
+A completed payment needs eSewa's Angular login, whose submit button stays disabled under
+synthetic input events. That is a browser-automation limit against a sandbox, not an integration
+defect.
+
+It also does not matter, because of how the flow is arranged:
+
+> **An order is marked paid only by a server-to-server status query. Never by the browser redirect.**
+
+The redirect's signed payload is an optimisation — it lets the return page render immediately
+instead of waiting on a round trip. `EsewaGateway.verify()` ignores it entirely and asks eSewa
+directly. So a wrong guess about the response scheme costs a customer a slower page, never a
+shipped order. `EsewaSignature.verifyResponse` is written to the documented scheme and asserts the
+structural properties that protect the order (tampering, a narrowed signed-field list, a foreign
+secret) rather than a published signature value that nobody can reproduce.
+
+### The response also signs `signed_field_names`
+
+The request signs three fields. The **response** signs five values plus the field list *itself* —
+six parts, eleven comma-separated tokens. Omitting that last field is the most likely way to write
+a verifier that rejects every genuine response, so it is called out in the code and in the test.
+
+### Secrets
+
+`SecretCipher` (Phase 4) holds both merchant credentials. The API accepts `esewaSecret` and returns
+`hasSecret: true` — **a console that is never sent a secret cannot leak it**. Saving with the field
+blank keeps the stored value, because a masked form that sends back an empty string would otherwise
+delete a working credential on every save.
+
+### State after this step
+
+```
+backend  5,798 tests, 0 failures, 0 skipped
+eSewa    signature verified against the live sandbox; status API verified
+not verified  a completed sandbox payment (sandbox login resists automation)
+```
+
+---
+
+## Appendix Z — Phase 5, part 1: the two credentials, and what they actually bought
+
+Phase 5's two external integrations are now live against real services rather than stubs. This
+records what was verified, what was not, and the parts of the customer portal that are still to do.
+
+### eSewa (D11) — verified against the sandbox, not against documentation
+
+See Appendix Y for the signature discovery. Summary:
+
+```
+POST rc-epay.../v2/form          signed with our algorithm  -> HTTP 200, eSewa's login page
+GET  rc.../api/epay/transaction/status/                     -> {"status":"PENDING", ...}
+```
+
+The status call reports the transaction **eSewa itself** created from **our** signed form, which is
+ground truth. That is why `EsewaSignatureTest` pins the exact expected value.
+
+Not verified: a *completed* payment. That needs eSewa's Angular login, whose submit button stays
+disabled under synthetic input. It is a sandbox-automation limit, and the design means it cannot
+cost anything: **an order is marked paid only by the server-to-server status query**, never by the
+browser redirect. `EsewaGateway.verify()` never looks at the redirect.
+
+The shop's credential stays per-shop and encrypted (`shop_payment_method.esewa_secret_enc`), with
+the sandbox secret only as a fallback so the integration works with no setup.
+
+### Firebase — verified by *deliberately* failing
+
+A push sender that "did not throw" proves nothing. `PushSenderLiveIT` sends to a **fabricated
+token**, because the error is the evidence:
+
+```
+Push to fcm-token-th… failed: FirebaseMessagingException:
+  The registration token is not a valid FCM registration token
+```
+
+That is FCM saying *"I authenticated you, I accepted your request, and this token does not exist."*
+An invalid credential would instead fail with an authentication error — so the assertion
+distinguishes a wired integration from a silently-broken one.
+
+### Three things worth recording about push
+
+**Registration is public, and that is deliberate.** A service worker can only obtain a token after
+the page loads, which is usually *before* anyone signs in — a first visit to a storefront is
+exactly when a token arrives. Requiring auth would move registration onto the account page, which
+customers never visit, and order-status push would then reach only people who had already found
+their way to settings. It is not a privilege escalation: an unattached token belongs to nobody and
+the fan-out query is keyed by **user**, so it can never be sent anything until a customer claims it.
+`SecurityConfig` permits `POST /api/v1/customer/devices` and nothing else on that path.
+
+**A push is never the only delivery route.** A customer who has push blocked, no device registered,
+or is offline still sees the same state in the app. So the sender never propagates a failure — a
+failed push must not fail the order transition that caused it — and the notification worker catches
+anything that escapes anyway, because it runs inside the consumer and a requeue would re-send the
+email to a customer who already has it.
+
+**`customer_device` is keyed by token, with no surrogate id.** A token identifies an *install*, not a
+person: it is regenerated when site data is cleared and an install cannot be "logged out". Two rows
+for one token would send every push twice. The first draft of the table had both an `id` primary key
+and a `token` primary key, which Postgres rejects with *"multiple primary keys ... are not
+allowed"* — the constraint that exists precisely to stop that.
+
+### Schema: four new tables (V10, V11)
+
+| Table | Key decision |
+|---|---|
+| `customer_address` | one default per customer, enforced by a **partial unique index**, not just a boolean |
+| `customer_device` | keyed by FCM token; cross-realm via `app_user` |
+| `product_review` | one per person per product; `author_name` survives account deletion |
+| `wishlist_item` | `UNIQUE (user_id, product_id)` |
+
+`product_review` keeps `author_name` and `is_verified` after the user row is gone: a rating is a
+statement about a product, and deleting it because someone deleted their account loses the shop's
+social proof. `is_visible` hides rather than deletes — moderation is not erasure, and an owner who
+changes their mind should get the review back.
+
+### Still to do in Phase 5
+
+Deliberately not attempted in this pass, and none of it is stubbed or faked:
+
+- customer account: order history, tracking timeline, reorder
+- addresses CRUD (table done, no service or controller)
+- reviews and ratings (table done, no service or controller)
+- wishlist (table done, no service or controller)
+- search (the trigram and full-text **indexes exist** from Phase 1; the query layer does not)
+- gallery browsing by product category — the D17 payoff
+- Nepali localisation scaffolding
+- the customer portal UI (the app is still five files: a gallery and a storefront)
+
+---
+
+## Appendix AA — Phase 5, part 2: the customer's half
+
+The customer portal's back end. What follows is the four decisions that were not obvious, because
+each of them is a place where the convenient choice is the wrong one.
+
+### Cross-shop search is not shop-scoped search with the clause removed
+
+Phase 1 built the trigram and full-text **indexes** and a shop-scoped query for shop owners. What
+was missing was the customer's question: "where can I buy paracetamol?" — which spans shops they
+have never visited and, by D17, is how a customer finds *all* pharmacies rather than one at a time.
+
+`PublicSearchRepository` adds three cross-shop queries, and the shape is deliberately **shop-first**:
+
+```
+GET /api/v1/p/search?q=paracetamol
+  → { shops: [ {pharmacy, 1 match}, {grocery, 1 match} ], products: [...] }
+```
+
+A customer searching a medicine wants to know *which pharmacies* sell it, not to scroll forty
+listings from one shop. So the shop-level result is the primary one and the products are the detail
+behind it — returned in the same response, because two round trips to draw one screen is how a
+search box feels slow.
+
+Only `ACTIVE` products in `VERIFIED` shops, enforced **in SQL** rather than in Java, so a retired
+product cannot appear by way of a filter the service forgot. That is asserted directly: the test
+creates a live-looking product in an unverified shop — which `ProductService` refuses to publish — by
+inserting the row directly, precisely to prove the search filter does not leak it.
+
+### `citext` is the reason a native projection needs a cast
+
+`shop.slug` is `citext`, and the PostgreSQL driver returns it as a `PGobject`, not a `String`. With a
+derived query Hibernate knows the column type from the entity mapping and converts; with a native
+query it does not, and the failure is:
+
+```
+Cannot project org.postgresql.util.PGobject to java.lang.String
+```
+
+which names neither the column nor the projection. The fix is `s.slug::text AS slug` in the SQL,
+with a comment saying why — because the obvious reading of that cast is "redundant, remove it".
+
+The same query uses an **interface projection** rather than `select new SomeRecord(...)`. A record
+constructor over a native query binds positionally by exact JDBC type and fails with "argument type
+mismatch", again naming neither cause. An interface maps by column alias and lets Hibernate convert.
+
+### A wishlist stores products, not variants
+
+A customer who taps the heart on "Sona Masoori Rice — 5kg" has saved the *product* and will pick a
+size at checkout. Pinning the variant makes the row undeletable once that variant is retired, and
+turns a list of things they might buy into a list of SKUs they once looked at.
+
+`wishlist_item` is `(user_id, product_id)` and nothing else.
+
+Thumbnails are resolved **one query per shop on the page**, not one per tile — a customer's wishlist
+spans shops and media is scoped to one, so grouping is unavoidable, but it is bounded by the number
+of shops rather than the number of items. The JPQL projection cannot carry the image at all:
+`product` has no image column, images are media rows, and joining them would multiply the rows for
+any product with more than one image.
+
+### Review averages are summed in SQL, over the whole set
+
+A product card shows "4.3 from 128" on every page of the catalogue. An average computed from the
+twenty reviews that happened to fit on screen would be wrong for exactly the products with a
+reputation worth having. `RatingSummary` therefore also has a `summariesFor(ids)` variant, because
+the per-card version is a hundred aggregate queries for a hundred products.
+
+"Verified purchase" means **a real order contained this product**, not "the reviewer is signed in".
+The distinction is the entire value of the badge — a competitor can sign in and review, and without
+it an owner cannot tell a customer's review from a competitor's.
+
+### Four audit columns, three migrations
+
+`BaseEntity` maps both `created_at` and `updated_at`. V10 created four tables with `created_at`
+only, so each was caught by Hibernate's schema validation at boot:
+
+```
+missing column [updated_at] in table [customer_device]
+missing column [updated_at] in table [wishlist_item]
+```
+
+V11 and V12 add them. Not edits to V10 — it has already run on two databases, and changing an
+applied migration breaks Flyway's checksum. Each migration says so at the top, because the instinct
+on the second occurrence is to go back and fix the original.
+
+### `customer_device` is keyed by token, and Postgres said so
+
+The first draft declared both `id` and `token` as primary keys:
+
+```
+ERROR: multiple primary keys for table "customer_device" are not allowed
+```
+
+A token identifies an *install*, not a person — it is regenerated when site data is cleared, and an
+install cannot be logged out. So the token is the key, there is no surrogate, and two rows for one
+token would send every push twice.
+
+### Scope
+
+Every customer endpoint is scoped by **customer and shop**. Order numbers are allocated per shop, so
+`ORD-0001` exists in every shop, and a customer lookup that ignored the shop would let a crafted
+link to `/orders/ORD-0001` return another shop's order — including its delivery address. Another
+customer's order answers **404**, not 403, because "forbidden" confirms the number exists, which is
+the only thing an enumeration attempt needs.
+
+Reorder **re-quotes** rather than replaying. Each line is looked up again and priced today, and lines
+that can no longer be bought come back with a reason instead of being dropped: a reorder that
+quietly loses the milk the customer wanted is worse than one that says the milk is gone.
+
+---
+
+## Appendix AB — the customer portal's front end, and four faults that hid each other
+
+The customer app was five files. It is now a working portal, and getting there exposed a chain of
+bugs where **each one concealed the next**.
+
+### The chain
+
+1. **No `/api` proxy.** Client-side `fetch('/api/v1/customer/wishlist')` hit the Next server, which
+   has no such route, and answered **404**. Every account page appeared to work and every request
+   failed identically. `rewrites()` in `next.config.ts` sends `/api/:path*` to the backend — the
+   same origin the console uses through Vite.
+
+2. **No `silent-check-sso.html`.** The adapter sets
+   `silentCheckSsoRedirectUri: ${redirectUri}/silent-check-sso.html`, the console serves that page,
+   and the customer app did not. keycloak-js opened the iframe, got a 404, nothing ever posted
+   back, and `init()` sat unresolved for **four seconds** — which is why the sign-in button looked
+   permanently disabled rather than briefly loading. One four-line file, copied.
+
+3. **Two Keycloak adapters.** The shell built one with `createKeycloakAdapter`, and the login page
+   built another. Both were internally consistent and neither knew about the other, so
+   `isAuthenticated()` on the shell's instance said "no" while the page's said "yes". The symptom
+   was a Sign-in button that never enabled and a header that never showed account links — with **no
+   error anywhere**. Fixed by a single shared adapter in `lib/auth`, and the comment in that file
+   now explains the failure rather than just asserting the rule.
+
+4. **`isAuthenticated()` asked before `init()` had resolved.** It is `init'd && authenticated`, so
+   asking first always answers false. The shell now awaits `initAuth()` and — the part that matters
+   — wraps it in `try/finally`, because a *rejected* init (deliberately cached, so a retry cannot
+   call `kc.init()` twice) otherwise left the header rendering a skeleton forever with no way
+   forward.
+
+Two of these were only visible *because* an earlier one was fixed. Fixing the 404s revealed the
+silent-check failure; fixing that revealed the double adapter.
+
+### `login(returnTo)` was sending an unregistered URI
+
+```ts
+await kc.login({ redirectUri: returnTo ?? config.redirectUri });   // before
+```
+
+`returnTo` looks like a path, and Keycloak validates `redirect_uri` against the client's registered
+list — so passing one fails **every time** with `Invalid parameter: redirect_uri`, leaving the
+customer on a blank page with a Keycloak error rather than signed in.
+
+The destination is now stashed in `sessionStorage` (not a query parameter — it would otherwise
+persist into browser history and Keycloak's logs) and the registered URI is always sent.
+`takeReturnTo()` clears on read and refuses anything not starting with a single `/`, so a stored
+absolute URL cannot turn the login link into an open redirect.
+
+### A shared package should not need the other app's variables
+
+`@store-app/auth` exports `consoleAuthConfig` **and** `customerAuthConfig`, so importing anything from
+it evaluated both. The customer app's build failed with `Missing required env var:
+VITE_KEYCLOAK_URL` — a variable it has no use for.
+
+Both configs are now **getters**, which defers each `env()` read to first property access. The object
+shape is unchanged so no call site moved, and a genuinely missing variable still fails hard — which
+is the point: a production deployment must never silently inherit a development Keycloak URL. That
+hard failure is also why `apps/customer/.env.local` now exists; `.env.example` said to copy it there
+and its comment ("the app boots without this file") was only true of the dev server.
+
+### Prerendering is not optional
+
+`next build` statically renders `/account/*`, and a component calling `useSearchParams` or
+`useParams` has no value to read during that pass — the build fails with `prerendering page
+/account/orders` rather than at runtime. Each route wraps its client component in `Suspense` with a
+skeleton fallback, so the page also does not visibly jump once real content arrives.
+
+### Where it stands
+
+```
+backend    5,810 tests, 0 failures, 0 skipped
+frontend   10/10 packages typecheck; console + customer build
+check-ui   ALL PAGES OK
+browser    orders, wishlist, addresses, login, shell — 0 console errors, 0 4xx/5xx
 ```

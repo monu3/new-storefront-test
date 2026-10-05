@@ -3,6 +3,8 @@ package com.storefront.store.payment;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
+
 import java.util.List;
 import java.util.UUID;
 
@@ -27,19 +29,39 @@ class PaymentGatewayTest {
 
 	private final CodGateway cod = new CodGateway();
 	private final BankTransferGateway bank = new BankTransferGateway();
-	private final EsewaGateway esewa = new EsewaGateway();
+	/** A gateway with no configuration: enough to test refusal and registration. */
+	private final EsewaGateway esewa = esewaGateway(offline(""));
 	private final PaymentGatewayRegistry registry =
 			new PaymentGatewayRegistry(List.of(cod, bank, esewa));
 
 	private static final Money HUNDRED = Money.ofMinor(10_000L);
 
+	/**
+	 * A gateway with no credential, for the properties that only need "is it wired up".
+	 *
+	 * <p>The two collaborators are null because neither the disabled path nor the signature path
+	 * touches them: {@code isAvailable} short-circuits on the flag, and signing needs only the
+	 * configured fallback secret.
+	 */
+	private static EsewaGateway esewaGateway(EsewaProperties properties) {
+		return new EsewaGateway(properties, null, null, new ObjectMapper());
+	}
+
+	/** eSewa's sandbox identity, pointed at an unroutable host so nothing leaves the machine. */
+	private static EsewaProperties offline(String secret) {
+		return new EsewaProperties(false, "EPAYTEST", secret,
+				"https://example.invalid", "https://example.invalid", 20);
+	}
+
 	private static PaymentGateway.ShopContext bareShop() {
-		return new PaymentGateway.ShopContext(UUID.randomUUID(), null, null, null, null);
+		return new PaymentGateway.ShopContext(UUID.randomUUID(), null, null, null, null,
+				"http://localhost:3000/checkout", "http://localhost:3000/checkout?failed=1");
 	}
 
 	private static PaymentGateway.ShopContext configuredBank() {
 		return new PaymentGateway.ShopContext(UUID.randomUUID(),
-				"Nabil Bank", "Ravi KC", "0102030405", "Send the receipt on WhatsApp.");
+				"Nabil Bank", "Ravi KC", "0102030405", "Send the receipt on WhatsApp.",
+				"http://localhost:3000/checkout", "http://localhost:3000/checkout?failed=1");
 	}
 
 	@Nested
@@ -129,39 +151,56 @@ class PaymentGatewayTest {
 	}
 
 	@Nested
-	@DisplayName("eSewa, stubbed")
-	class Stubbed {
+	@DisplayName("eSewa")
+	class EsewaGatewayBehaviour {
 
 		@Test
-		@DisplayName("refuses to initiate rather than returning a URL that goes nowhere")
-		void refusesToInitiate() {
-			// A redirect to nowhere produces a customer who has entered their details and then
-			// seen nothing happen. That is worse than an honest refusal.
-			assertThatThrownBy(() -> esewa.initiate(HUNDRED, "ORD-0042", bareShop()))
-					.isInstanceOf(UnsupportedOperationException.class)
-					.hasMessageContaining("not available yet");
+		@DisplayName("reports itself unavailable when no credential is configured")
+		void reportsUnavailableWithoutConfiguration() {
+			// Constructed with no merchant secret and a shop with no configured row, so the honest
+			// answer is "unavailable" and CheckoutService hides the option. The property under test
+			// is the original stub's: refuse rather than pretend.
+		EsewaGateway unconfigured = esewaGateway(offline(""));
+
+			assertThat(unconfigured.isAvailable()).isFalse();
 		}
 
 		@Test
-		@DisplayName("reports itself unavailable, so checkout can hide the option")
-		void reportsUnavailable() {
-			assertThat(esewa.isAvailable()).isFalse();
-		}
-
-		@Test
-		@DisplayName("is still a registered gateway, so nothing in checkout has to be rewritten later")
+		@DisplayName("is a registered gateway, so nothing in checkout had to be rewritten")
 		void isRegistered() {
-			// The point of having it at all: when eSewa goes live in Phase 5, nothing in
-			// CheckoutService changes. It only has to stop refusing.
+			// The point of Phase 1 having it at all: when eSewa went live in Phase 5, nothing in
+			// CheckoutService changed. The gateway only had to stop refusing.
 			assertThat(registry.forMethod(PaymentGateway.ShopOrderPaymentMethod.ESAWA))
 					.isSameAs(esewa);
 		}
 
 		@Test
-		@DisplayName("refuses to verify")
-		void refusesToVerify() {
-			assertThatThrownBy(() -> esewa.verify("ESW-1", bareShop()))
-					.isInstanceOf(UnsupportedOperationException.class);
+		@DisplayName("signs a form rather than returning a bare link")
+		void buildsASignedForm() {
+			// eSewa's checkout is POST-only, so a redirect url cannot start a payment. This is the
+			// real signature path; the message format itself is pinned in EsewaSignatureTest.
+			EsewaGateway gateway = esewaGateway(new EsewaProperties(true, "EPAYTEST",
+					"8gBm/:&EnhH.1/q",
+					"https://rc-epay.esewa.com.np/api/epay/main/v2/form",
+					"https://rc.esewa.com.np/api/epay/transaction/status/", 20));
+
+			// No shop configuration and no shop row: the fallback credential is used, which is
+			// what makes the sandbox work with no setup.
+			java.util.Map<String, String> fields = gateway.redirectFor(HUNDRED, "ORD-0042",
+					configuredBank()).fields();
+
+			assertThat(fields).containsEntry("product_code", "EPAYTEST");
+			assertThat(fields.get("signature")).isNotBlank();
+			assertThat(gateway.redirectFor(HUNDRED, "ORD-0042", configuredBank()).autoPostHtml())
+					.contains("rc-epay.esewa.com.np");
+		}
+
+		@Test
+		@DisplayName("reports a disabled eSewa as unavailable")
+		void disabledIsUnavailable() {
+			EsewaGateway off = esewaGateway(offline("secret"));
+
+			assertThat(off.isAvailable()).isFalse();
 		}
 	}
 

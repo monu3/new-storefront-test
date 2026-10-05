@@ -132,6 +132,15 @@
 			<version>${cloudinary.version}</version>
 		</dependency>
 		<!-- Binds the JSON payload of Cloudinary's upload response -->
+		<!-- Phase 5: Firebase Cloud Messaging for order-status push. The admin SDK is the only
+		     supported way to send FCM from a server; the REST v1 API needs a hand-rolled OAuth2
+		     token exchange and a retry policy. -->
+		<dependency>
+			<groupId>com.google.firebase</groupId>
+			<artifactId>firebase-admin</artifactId>
+			<version>9.2.0</version>
+		</dependency>
+
 		<dependency>
 			<groupId>com.google.code.gson</groupId>
 			<artifactId>gson</artifactId>

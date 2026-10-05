@@ -4,3 +4,4 @@ export * from './meta';
 export * from './theme';
 export * from './dashboard';
 export * from './phase4';
+export * from './customer';

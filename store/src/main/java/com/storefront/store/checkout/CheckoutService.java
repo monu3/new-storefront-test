@@ -11,6 +11,8 @@ import com.storefront.store.order.OrderNumberService;
 import com.storefront.store.order.OrderService;
 import com.storefront.store.order.ShopOrder;
 import com.storefront.store.payment.PaymentGateway;
+import com.storefront.store.payment.PaymentMethodService;
+import com.storefront.store.payment.SecretCipher;
 import com.storefront.store.payment.PaymentTransaction;
 import com.storefront.store.payment.PaymentTransactionRepository;
 import com.storefront.store.shop.Shop;
@@ -189,24 +191,66 @@ public class CheckoutService {
 		// that enabled bank transfer without account details fails here rather than accepting an
 		// order nobody can be paid for.
 		PaymentGateway gateway = gateways.forMethod(toGatewayMethod(method));
-		PaymentGateway.Initiation initiation = gateway.initiate(
-				com.storefront.store.common.Money.ofMinor(quote.totalMinor()),
-				order.getOrderNumber(),
-				shopContext(shop).toGatewayContext());
+		PaymentGateway.ShopContext context =
+				shopContext(shop, order.getOrderNumber()).toGatewayContext();
+		com.storefront.store.common.Money amount =
+				com.storefront.store.common.Money.ofMinor(quote.totalMinor());
 
-		if (initiation.reference() != null) {
-			transaction.attachGatewayRef(initiation.reference());
+		// eSewa is a POST-only endpoint, so its signed form is produced separately from the shared
+		// Initiation record. Every other gateway fills in the shared record and needs nothing extra.
+		if (gateway instanceof com.storefront.store.payment.EsewaGateway esewa) {
+			// The transaction id is derived from the order number, so a customer who retries the
+			// payment reuses it. That is deliberate: eSewa treats a repeated uuid as the same
+			// transaction rather than taking the money twice.
+			transaction.attachGatewayRef(esewa.transactionUuid(order.getOrderNumber()));
+		} else {
+			PaymentGateway.Initiation initiation = gateway.initiate(
+					amount, order.getOrderNumber(), context);
+			if (initiation.reference() != null) {
+				transaction.attachGatewayRef(initiation.reference());
+			}
 		}
+
 		return payments.saveAndFlush(transaction);
 	}
 
-	private PaymentGatewayRequest shopContext(Shop shop) {
-		// Bank details live on shop_payment_method, which Phase 1 does not yet configure through
-		// the API. Until then the context carries the shop id only, and BankTransferGateway
-		// refuses at checkout with a message telling the customer to choose another method —
-		// which is the correct behaviour for a shop that has not configured it.
-		return new PaymentGatewayRequest(shop.getId(), null, null, null, null);
+	/**
+	 * The shop's own payment settings, plus where eSewa should send the customer back to.
+	 *
+	 * <p>Bank details are read from {@code shop_payment_method} now that Phase 4 configures them.
+	 * A shop that has not configured bank transfer gets nulls here, and {@code BankTransferGateway}
+	 * refuses at checkout with a message telling the customer to choose another method — which is
+	 * the correct behaviour, and better than offering a transfer to an account that does not exist.
+	 */
+	private PaymentGatewayRequest shopContext(Shop shop, String orderNumber) {
+		String bankName = null;
+		String accountName = null;
+		String accountNumber = null;
+		String instructions = null;
+
+		try {
+			var bank = paymentMethods.get(PaymentGateway.ShopOrderPaymentMethod.BANK_TRANSFER);
+			bankName = bank.getBankName();
+			accountName = bank.getBankAccountName();
+			// Decrypted only here, for the one call that needs to display it to the customer.
+			accountNumber = bank.getBankAccountNumberEnc() == null
+					? null
+					: cipher.decrypt(bank.getBankAccountNumberEnc());
+			instructions = bank.getInstructions();
+		} catch (RuntimeException ex) {
+			// No bank row, or a credential that will not decrypt. Nulls are the correct value:
+			// BankTransferGateway then refuses rather than showing a blank account.
+			log.debug("Shop {} has no usable bank transfer configuration: {}", shop.getId(),
+					ex.getMessage());
+		}
+
+		return new PaymentGatewayRequest(shop.getId(), bankName, accountName, accountNumber,
+				instructions, storefront.baseUrl(), orderNumber);
 	}
+
+	private final PaymentMethodService paymentMethods;
+	private final SecretCipher cipher;
+	private final StorefrontProperties storefront;
 
 	private PaymentGateway.ShopOrderPaymentMethod toGatewayMethod(ShopOrder.PaymentMethod method) {
 		return PaymentGateway.ShopOrderPaymentMethod.valueOf(method.name());
@@ -269,12 +313,22 @@ public class CheckoutService {
 			String bankName,
 			String bankAccountName,
 			String accountNumber,
-			String instructions) {
+			String instructions,
+			/** The store's base url, e.g. {@code http://localhost:3000}. Server-configured. */
+			String storefrontBaseUrl,
+			/** The order the payment is for, used to build eSewa's return urls. */
+			String orderNumber) {
 
 		/** Adapt to what a gateway expects, so the gateway interface stays order-agnostic. */
 		com.storefront.store.payment.PaymentGateway.ShopContext toGatewayContext() {
+			// eSewa's return urls are the shop's storefront, never anything the customer's browser
+			// supplies. A redirect target chosen by whoever clicks "pay" is an open redirect, and an
+			// open redirect on a payment page is a phishing page.
+			String checkout = storefrontBaseUrl + "/checkout?order="
+					+ java.net.URLEncoder.encode(orderNumber, java.nio.charset.StandardCharsets.UTF_8);
 			return new com.storefront.store.payment.PaymentGateway.ShopContext(
-					shopId, bankName, bankAccountName, accountNumber, instructions);
+					shopId, bankName, bankAccountName, accountNumber, instructions,
+					checkout, checkout + "&payment=failed");
 		}
 	}
 

@@ -16,6 +16,14 @@ import org.springframework.data.jpa.repository.JpaRepository;
  */
 public interface PaymentTransactionRepository extends JpaRepository<PaymentTransaction, UUID> {
 
+	/**
+	 * The most recent attempt for an order.
+	 *
+	 * <p>Latest rather than first because a customer who retries after a failed attempt has two
+	 * rows, and reading the first would report the failure forever.
+	 */
+	java.util.Optional<PaymentTransaction> findFirstByOrderIdOrderByCreatedAtDesc(UUID orderId);
+
 	Optional<PaymentTransaction> findByIdempotencyKey(String idempotencyKey);
 
 	List<PaymentTransaction> findByOrderIdOrderByCreatedAtAsc(UUID orderId);

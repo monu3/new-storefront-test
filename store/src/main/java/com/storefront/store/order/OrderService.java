@@ -112,13 +112,14 @@ public class OrderService {
 
 		// Recorded in this same transaction (MANDATORY), so the event cannot survive an order that
 		// rolled back and cannot be lost after one that committed. See OutboxService.
-		recordEvent(saved, "ORDER_PLACED",
-				java.util.Map.of(
-						"orderId", saved.getId().toString(),
-						"orderNumber", saved.getOrderNumber(),
-						"shopId", shop.getId().toString(),
-						"guestEmail", saved.getGuestEmail() == null ? "" : saved.getGuestEmail(),
-						"totalMinor", saved.getTotalMinor()));
+		// The same payload builder as every later event, rather than a hand-built Map.of.
+		//
+		// <p>The old version built its own map and, crucially, wrote `guestEmail` as an *empty
+		// string* when there was none -- because Map.of rejects nulls. That made "this order has no
+		// guest email" indistinguishable from "this order has an empty one", and the notification
+		// worker, which keys on a non-null email, would treat the two differently. eventPayload
+		// omits absent fields instead.
+		recordEvent(saved, "ORDER_PLACED", eventPayload(saved, shop));
 
 		log.info("Order {} ({}) placed in shop {} for {}",
 				saved.getOrderNumber(), saved.getId(), shop.getId(), Money.ofMinor(saved.getTotalMinor()));
@@ -403,13 +404,39 @@ public class OrderService {
 	}
 
 	/** The minimum a consumer needs to tell a customer about their order. */
+	/**
+	 * The outbox payload for an order event.
+	 *
+	 * <p>Carries the two things the notification worker cannot work out for itself:
+	 *
+	 * <ul>
+	 *   <li><b>{@code customerUserId}</b> — the signed-in customer's account. Absent for a guest
+	 *       order, which is the majority on this platform, and the worker sends no push without
+	 *       it. Resolving the user from the email at notification time would be wrong: the address
+	 *       a guest types is not an account.</li>
+	 *   <li><b>{@code shopSlug}</b> — for the deep link a push carries. The shop id is already
+	 *       there for the shop's own inbox, but a customer-facing link needs the slug the storefront
+	 *       is actually served from.</li>
+	 * </ul>
+	 *
+	 * <p>Both are optional in the map rather than empty strings, so a consumer can tell "absent"
+	 * from "present but blank".
+	 */
 	private java.util.Map<String, Object> eventPayload(ShopOrder order, Shop shop) {
 		java.util.Map<String, Object> payload = new java.util.LinkedHashMap<>();
 		payload.put("orderId", order.getId().toString());
 		payload.put("orderNumber", order.getOrderNumber());
 		payload.put("shopId", shop.getId().toString());
+		payload.put("shopSlug", shop.getSlug());
 		payload.put("totalMinor", order.getTotalMinor());
 		payload.put("status", order.getStatus().name());
+
+		if (order.getCustomerId() != null) {
+			payload.put("customerUserId", order.getCustomerId().toString());
+		}
+		if (order.getGuestEmail() != null) {
+			payload.put("guestEmail", order.getGuestEmail());
+		}
 		return payload;
 	}
 

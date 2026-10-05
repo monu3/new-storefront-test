@@ -57,13 +57,31 @@ public interface PaymentGateway {
 		BANK_TRANSFER
 	}
 
-	/** What the shop's own settings contribute to a payment. */
+	/**
+	 * What the shop's own settings contribute to a payment.
+	 *
+	 * <p>Carries the return urls as well as the bank details, because eSewa needs somewhere to send
+	 * the customer back to. They are the shop's storefront checkout, never a value from the
+	 * customer's browser — a redirect target chosen by whoever clicks "pay" is an open redirect,
+	 * and an open redirect on a payment page is a phishing page.
+	 */
 	record ShopContext(
 			UUID shopId,
 			String bankName,
 			String bankAccountName,
 			String accountNumber,
-			String instructions) {
+			String instructions,
+			/** Where eSewa sends the customer after a successful payment. */
+			String successUrl,
+			/** Where eSewa sends the customer after a failure or a cancellation. */
+			String failureUrl) {
+
+		/** The bank-transfer shape, for gateways that need no return url. */
+		public static ShopContext bankTransfer(UUID shopId, String bankName,
+				String bankAccountName, String accountNumber, String instructions) {
+			return new ShopContext(shopId, bankName, bankAccountName, accountNumber,
+					instructions, null, null);
+		}
 	}
 
 	/**
@@ -79,6 +97,20 @@ public interface PaymentGateway {
 			String reference,
 			String instructions,
 			boolean requiresManualVerification) {
+
+		/**
+		 * eSewa's variant: a POST-only endpoint, so a link will not start a payment.
+		 *
+		 * <p>{@link #fields()} is the signed form eSewa requires and {@link #autoPostHtml()} is the
+		 * page that submits it. Both are eSewa-specific and deliberately not on the shared record —
+		 * COD and bank transfer have no such thing, and putting them here would put an always-null
+		 * pair of fields on every gateway.
+		 */
+		public record Redirect(
+				String formUrl,
+				java.util.Map<String, String> fields,
+				String autoPostHtml) {
+		}
 	}
 
 	/** The outcome of a verification attempt. */

@@ -1,5 +1,6 @@
 package com.storefront.store.media;
 
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -40,4 +41,16 @@ public interface MediaAssetRepository extends JpaRepository<MediaAsset, UUID> {
 	 * queries on a single page view, and the storefront is server-rendered on every request.
 	 */
 	List<MediaAsset> findByShopIdAndProductIdIsNotNullOrderByIdAsc(UUID shopId);
+
+	/**
+	 * The images for a whole page of products, in one query.
+	 *
+	 * <p>Exists so a list of product cards (a wishlist, a catalogue page) costs one media query
+	 * rather than one per row. Without it, a twenty-item wishlist is twenty queries, which is the
+	 * difference between a page that opens and one that does not.
+	 *
+	 * <p>Scoped by shop as well, because a product id alone would return another shop's images to a
+	 * caller who has no business seeing them.
+	 */
+	List<MediaAsset> findByShopIdAndProductIdInOrderBySortOrderAsc(UUID shopId, Collection<UUID> productIds);
 }

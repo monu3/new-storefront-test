@@ -4,6 +4,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
+import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -104,16 +106,109 @@ public class CheckoutController {
 				.body(OrderPlacedResponse.from(placement, request.shippingAddress()));
 	}
 
-	/** The payment methods a customer may choose on this platform right now. */
+	/**
+	 * The payment methods a customer may choose right now.
+	 *
+	 * <p>eSewa's presence is decided by whether the gateway can actually take a payment, not by a
+	 * hardcoded list. Offering a method that will be refused at checkout is worse than not offering
+	 * it: the customer has entered their details by the time they find out.
+	 */
 	@GetMapping("/payment-methods")
-	@Operation(summary = "Available payment methods",
-			description = "eSewa is excluded until its gateway is live.")
+	@Operation(summary = "Available payment methods")
 	public List<PaymentMethodView> paymentMethods() {
-		return List.of(
-				new PaymentMethodView("COD", "Cash on delivery",
-						"Pay the courier when your order arrives."),
-				new PaymentMethodView("BANK_TRANSFER", "Bank transfer",
-						"Transfer to the shop's account; the shop confirms it."));
+		List<PaymentMethodView> methods = new java.util.ArrayList<>();
+
+		if (esewa != null && esewa.isAvailable()) {
+			methods.add(new PaymentMethodView("ESAWA", "eSewa",
+					"Pay with your eSewa wallet."));
+		}
+		methods.add(new PaymentMethodView("COD", "Cash on delivery",
+				"Pay the courier when your order arrives."));
+		methods.add(new PaymentMethodView("BANK_TRANSFER", "Bank transfer",
+				"Transfer to the shop's account; the shop confirms it."));
+		return methods;
+	}
+
+	/**
+	 * The signed page that starts an eSewa payment for an order.
+	 *
+	 * <p>Returned as HTML rather than as a redirect because eSewa's checkout takes a POST: there is
+	 * no URL to send the customer to. The storefront opens this in a frame or a tab and lets the
+	 * form submit itself.
+	 *
+	 * <p><b>Looked up by order number, not by id, and it is not authenticated.</b> It has to be
+	 * reachable from eSewa's return, which arrives in the customer's browser with no session on our
+	 * side. That makes this a public endpoint, so it is scoped as tightly as it can be: it exposes
+	 * only a payment page for a specific order, the amount is the order's own recorded total rather
+	 * than anything supplied here, and it reveals no customer detail.
+	 */
+	@GetMapping(value = "/shops/{shopSlug}/orders/{orderNumber}/pay", produces = "text/html; charset=UTF-8")
+	@Operation(summary = "The signed eSewa payment page for an order",
+			description = "Public: reached from eSewa's return, which has no session with us.")
+	public ResponseEntity<String> payForOrder(@PathVariable String shopSlug,
+			@PathVariable String orderNumber) {
+		if (esewa == null || !esewa.isAvailable()) {
+			return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
+					.body("<!doctype html><p>eSewa is not available. Please choose another payment method.</p>");
+		}
+
+		ShopOrder order = findOrder(shopSlug, orderNumber);
+		if (order == null || order.getPaymentMethod() != com.storefront.store.order.ShopOrder.PaymentMethod.ESAWA) {
+			return ResponseEntity.status(HttpStatus.NOT_FOUND)
+					.body("<!doctype html><p>No eSewa payment is outstanding for that order.</p>");
+		}
+
+		com.storefront.store.shop.Shop shop = shops.findById(order.getShopId()).orElse(null);
+		if (shop == null) {
+			return ResponseEntity.status(HttpStatus.NOT_FOUND)
+					.body("<!doctype html><p>That shop no longer exists.</p>");
+		}
+
+		var context = new com.storefront.store.payment.PaymentGateway.ShopContext(
+				shop.getId(), null, null, null, null,
+				storefront.baseUrl() + "/checkout?order=" + orderNumber,
+				storefront.baseUrl() + "/checkout?order=" + orderNumber + "&payment=failed");
+
+		String html = esewa.redirectFor(
+				com.storefront.store.common.Money.ofMinor(order.getTotalMinor()),
+				order.getOrderNumber(), context).autoPostHtml();
+
+		// A payment page must never be cached: a stale one carries a spent transaction uuid.
+		return ResponseEntity.ok()
+				.contentType(MediaType.TEXT_HTML)
+				.header("Cache-Control", "no-store")
+				.body(html);
+	}
+
+	/**
+	 * What actually happened to an order's payment.
+	 *
+	 * <p>Public for the same reason {@code /pay} is: it is read from the return page. It queries
+	 * eSewa server to server, so the answer comes from eSewa rather than from the browser.
+	 */
+	@GetMapping("/orders/{orderNumber}/payment-status")
+	@Operation(summary = "The authoritative payment state for an order")
+	public PaymentStatusView paymentStatus(@PathVariable String shopSlug,
+			@PathVariable String orderNumber) {
+		ShopOrder order = findOrder(shopSlug, orderNumber);
+		if (order == null) {
+			return new PaymentStatusView("UNKNOWN", "That order does not exist.", false);
+		}
+		return PaymentStatusView.from(payments.stateOf(order));
+	}
+
+	/**
+	 * The payment state, flattened for the storefront.
+	 *
+	 * <p>A projection of {@link PaymentService.State} rather than a second definition of it: two
+	 * types saying what "paid" means is how a status page and the payment service start telling
+	 * a customer different things about the same order.
+	 */
+	public record PaymentStatusView(String status, String message, boolean paid) {
+
+		static PaymentStatusView from(PaymentService.State state) {
+			return new PaymentStatusView(state.status(), state.message(), state.paid());
+		}
 	}
 
 	/** The shops a customer can buy from, for the storefront's shop picker. */
@@ -127,7 +222,41 @@ public class CheckoutController {
 				.toList();
 	}
 
+	private final com.storefront.store.payment.EsewaGateway esewa;
+	private final PaymentService payments;
+	private final StorefrontProperties storefront;
+	private final com.storefront.store.order.ShopOrderRepository orderRepository;
+
 	// ------------------------------------------------------------------ helpers
+
+	/**
+	 * Finds one of a shop's orders by its number.
+	 *
+	 * <p>Scoped by shop because order numbers are allocated per shop, so {@code ORD-0001} exists in
+	 * every shop and a global lookup would either be ambiguous or need a full scan of the order
+	 * table. The repository already has the exact query for this pair.
+	 *
+	 * <p><b>The slug is not a credential, and what it discloses is narrow.</b> These endpoints are
+	 * reached from eSewa's return, where the customer has no session with us, so there is no caller
+	 * to resolve a shop from. But {@code /pay} returns a payment page for one order priced from
+	 * that order's own recorded total, and {@code /payment-status} returns a state and a sentence.
+	 * Neither exposes a customer, an address, or an order list.
+	 *
+	 * <p>The storefront already knows the slug — it is the shop the customer is standing in — so
+	 * nothing about the flow is compromised by requiring it.
+	 */
+	private ShopOrder findOrder(String shopSlug, String orderNumber) {
+		return shops.findBySlugIgnoringCase(slugOrEmpty(shopSlug))
+				.flatMap(shop -> orderRepository.findByShopIdAndOrderNumber(
+						shop.getId(), orderNumber))
+				.orElse(null);
+	}
+
+	/** A null or blank slug matches nothing rather than throwing. */
+	private String slugOrEmpty(String slug) {
+		return slug == null ? "" : slug.trim();
+	}
+
 
 	/**
 	 * The shop being bought from.
