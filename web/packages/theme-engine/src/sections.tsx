@@ -660,13 +660,129 @@ function HtmlSection({ resolved }: SectionProps) {
   return <EmptySection label="Custom HTML is saved but not rendered until the sanitiser ships" />;
 }
 
+function SiteHeader({ resolved }: SectionProps) {
+  const { section, shop } = resolved;
+  const props = section.props ?? {};
+  const links = Array.isArray(props.links) ? props.links : [];
+  // A header with no links still shows the shop name and a menu of the shop's own categories, so an
+  // owner who adds the section and does nothing else still gets a usable storefront.
+  const fallbackLinks = resolved.categories.slice(0, 5).map((c) => ({
+    label: c.label,
+    href: `/s/${shop.slug}/c/${c.code.toLowerCase()}`,
+  }));
+  const menu = links.length > 0 ? links : fallbackLinks;
+  const sticky = props.sticky !== false;
+
+  return (
+    <header
+      className={`border-b bg-background ${sticky ? 'sticky top-0 z-40' : ''}`}
+      data-section="site-header"
+    >
+      <div className="mx-auto flex max-w-6xl flex-wrap items-center gap-4 px-4 py-3">
+        <div className="flex min-w-0 items-center gap-2">
+          {props.showLogo !== false && shop.logoUrl ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img src={shop.logoUrl} alt="" className="size-8 shrink-0 rounded object-cover" />
+          ) : null}
+          {props.showShopName !== false ? (
+            <span className="truncate font-semibold">{shop.name}</span>
+          ) : null}
+        </div>
+
+        <nav aria-label="Shop menu" className="order-3 w-full sm:order-2 sm:w-auto sm:flex-1">
+          <ul className="flex flex-wrap items-center gap-1 text-sm">
+            {menu.map((item: Record<string, unknown>, i: number) => (
+              <li key={`${text(item, 'label', 'link')}-${i}`}>
+                <SafeHref
+                  href={text(item, 'href', '#')}
+                  className="rounded-md px-2.5 py-1.5 transition-colors hover:bg-muted"
+                >
+                  {text(item, 'label', 'Link')}
+                </SafeHref>
+              </li>
+            ))}
+            {menu.length === 0 ? (
+              <li className="px-2.5 py-1.5 text-xs text-muted-foreground">
+                Add links, or publish some products so your categories appear here.
+              </li>
+            ) : null}
+          </ul>
+        </nav>
+
+        {props.showSearch !== false ? (
+          <span className="order-2 ml-auto inline-flex items-center gap-1.5 text-sm text-muted-foreground sm:order-3">
+            <svg viewBox="0 0 24 24" className="size-4" fill="none" stroke="currentColor" strokeWidth={2} aria-hidden>
+              <circle cx="11" cy="11" r="7" />
+              <path d="m20 20-3.5-3.5" strokeLinecap="round" />
+            </svg>
+            Search
+          </span>
+        ) : null}
+      </div>
+    </header>
+  );
+}
+
+function SiteFooter({ resolved }: SectionProps) {
+  const { section, shop } = resolved;
+  const props = section.props ?? {};
+  const columns = Array.isArray(props.columns) ? props.columns : [];
+  const year = new Date().getFullYear();
+
+  return (
+    <footer className="mt-12 border-t bg-muted/30" data-section="site-footer">
+      <div className="mx-auto max-w-6xl px-4 py-10">
+        <div className="flex flex-wrap gap-8">
+          <div className="min-w-[220px] flex-1">
+            <p className="font-semibold">{shop.name}</p>
+            {text(props, 'about') || shop.description ? (
+              <p className="mt-2 text-sm text-muted-foreground">
+                {text(props, 'about') || shop.description}
+              </p>
+            ) : null}
+          </div>
+
+          {columns.map((col: Record<string, unknown>, i: number) => {
+            const items = Array.isArray(col.links) ? col.links : [];
+            return (
+              <div key={`${text(col, 'title', 'col')}-${i}`}>
+                <p className="text-sm font-medium">{text(col, 'title', 'Links')}</p>
+                <ul className="mt-2 space-y-1.5 text-sm">
+                  {items.map((item: Record<string, unknown>, j: number) => (
+                    <li key={`${text(item, 'label', 'l')}-${j}`}>
+                      <SafeHref href={text(item, 'href', '#')} className="text-muted-foreground hover:text-foreground">
+                        {text(item, 'label', 'Link')}
+                      </SafeHref>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            );
+          })}
+        </div>
+
+        <div className="mt-8 flex flex-wrap items-center justify-between gap-3 border-t pt-6 text-xs text-muted-foreground">
+          <p>{text(props, 'copyright') || `© ${year} ${shop.name}`}</p>
+          {props.showPaymentBadges !== false ? (
+            <p className="inline-flex items-center gap-2">
+              <span className="rounded border px-1.5 py-0.5">eSewa</span>
+              <span className="rounded border px-1.5 py-0.5">Cash on delivery</span>
+              <span className="rounded border px-1.5 py-0.5">Bank transfer</span>
+            </p>
+          ) : null}
+        </div>
+      </div>
+    </footer>
+  );
+}
+
 /**
  * Shown when a theme references a section this build does not have.
  *
  * <p>The important property is that it renders *something visible* rather than throwing. A theme
  * written by a newer build must degrade to one obvious gap on a shop's page, not a 500.
  */
-function UnknownSection({ resolved }: SectionProps) {
+export function UnknownSection({ resolved }: SectionProps) {
   return (
     <div className="rounded-lg border border-dashed p-6 text-center">
       <p className="text-sm font-medium">
@@ -720,6 +836,7 @@ function EmptySection({ label }: { label: string }) {
  */
 export const SECTION_COMPONENTS: Record<SectionType, (props: SectionProps) => ReactNode> = {
   'announcement-bar': AnnouncementBar,
+  'site-header': SiteHeader,
   hero: Hero,
   'category-grid': CategoryGrid,
   'product-carousel': ProductCarousel,
@@ -742,6 +859,7 @@ export const SECTION_COMPONENTS: Record<SectionType, (props: SectionProps) => Re
   divider: Divider,
   spacer: Spacer,
   html: HtmlSection,
+  'site-footer': SiteFooter,
   'unknown-section': UnknownSection,
 };
 

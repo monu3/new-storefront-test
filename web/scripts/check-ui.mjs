@@ -36,6 +36,52 @@ const targets = [
           return s.getPropertyValue('font-family') !== '' && getComputedStyle(document.body).margin !== '16px';
         })],
       ['product content rendered', (p) => p.locator('a[href*="/c/"]').count().then((n) => n > 0)],
+
+      // The regression this guards: theme tokens are stored as hex (#7c3aed) but the stylesheet
+      // wraps every colour variable in hsl(var(--primary)), so a hex written straight onto the
+      // element computed to hsl(#7c3aed) — not a colour. The browser dropped the declaration and
+      // every storefront rendered monochrome, with white CTA text on a transparent background.
+      //
+      // Nothing errored, the 5,810 backend tests passed, and every earlier appearance check
+      // asserted on HTML/CSS *text* rather than on a computed style. So this asserts on what the
+      // browser actually painted, which is the whole point.
+      ['theme colour actually paints', (p) =>
+        p.evaluate(() => {
+          const scope = document.querySelector('[style*="--primary"]');
+          if (!scope) return false;
+
+          // A token still written as hex fails here: hsl(#7c3aed) is not a colour.
+          const primary = getComputedStyle(scope).getPropertyValue('--primary').trim();
+          if (primary.startsWith('#')) return false;
+
+          // And the visible proof: a bg-primary element must not be transparent. That was the
+          // exact failure — an invisible call-to-action.
+          const el = document.querySelector('.bg-primary');
+          if (!el) return true;
+          return getComputedStyle(el).backgroundColor !== 'rgba(0, 0, 0, 0)';
+        })],
+
+      // A -foreground companion is derived from the colour's luminance when the theme does not set
+      // one, so a pale brand colour cannot produce white-on-white button text.
+      ['cta text is readable against its background', (p) =>
+        p.evaluate(() => {
+          const el = document.querySelector('.bg-primary');
+          if (!el) return true;
+          const cs = getComputedStyle(el);
+          const lum = (c) => {
+            const [r, g, b] = c
+              .match(/\d+/g)
+              .map(Number)
+              .map((v) => {
+                const x = v / 255;
+                return x <= 0.03928 ? x / 12.92 : Math.pow((x + 0.055) / 1.055, 2.4);
+              });
+            return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+          };
+          const a = lum(cs.color);
+          const b = lum(cs.backgroundColor);
+          return (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05) >= 4.5;
+        })],
     ],
   },
   {

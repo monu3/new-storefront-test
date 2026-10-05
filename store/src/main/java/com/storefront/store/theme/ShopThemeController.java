@@ -49,6 +49,7 @@ public class ShopThemeController {
 	private final ThemeService themes;
 	private final TenantGuard tenantGuard;
 	private final CurrentUser currentUser;
+	private final StorefrontCacheInvalidator cacheInvalidator;
 
 	// ------------------------------------------------------------------ themes
 
@@ -134,6 +135,36 @@ public class ShopThemeController {
 	public ThemeView publish(@PathVariable UUID themeId) {
 		Shop shop = tenantGuard.requireOwnedShop();
 		return toView(shop, themes.publishTheme(shop, themeId, currentUser.optionalUserId()));
+	}
+
+	/**
+	 * Saves and publishes in one request.
+	 *
+	 * <p>This is what the Appearance screen's Publish button calls. The pair of endpoints above
+	 * forces an owner to unpublish, edit, then publish — and in the gap the storefront falls back to
+	 * the platform default, so a customer's page visibly changes to someone else's template and
+	 * back. Doing it in one transaction closes that window: a reader sees the old published theme
+	 * or the new one, never a gap and never a blend.
+	 *
+	 * <p>The plain save endpoint keeps its refusal. It exists for genuinely draft work, and a bare
+	 * save of a live theme would genuinely show customers a work in progress.
+	 */
+	@PostMapping("/{themeId}/save-and-publish")
+	@Operation(summary = "Save and publish a theme atomically",
+			description = "The storefront never falls back to the platform default, because the config "
+					+ "and the published flag are written in one transaction.")
+	public ThemeDetail saveAndPublish(@PathVariable UUID themeId,
+			@Valid @RequestBody SaveThemeRequest request) {
+		Shop shop = tenantGuard.requireOwnedShop();
+		ShopTheme theme = themes.saveAndPublishTheme(shop, themeId, request.config(), request.name(),
+				currentUser.optionalUserId());
+
+		// The storefront caches this page, so without this the owner sees "published" while the
+		// page they are about to share still serves the old design.
+		cacheInvalidator.invalidate(shop.getSlug());
+
+		return new ThemeDetail(toView(shop, theme), theme.getConfig(),
+				themes.danglingAssetHandles(shop, theme.getConfig()));
 	}
 
 	@PostMapping("/{themeId}/unpublish")

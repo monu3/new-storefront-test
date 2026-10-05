@@ -223,6 +223,46 @@ public class ThemeService {
 	}
 
 	/**
+	 * Saves and publishes in one transaction.
+	 *
+	 * <p>This exists because the obvious alternative — unpublish, edit, publish — is worse for the
+	 * customer than the problem it solves. Between the unpublish and the publish the shop has no
+	 * live theme, so its storefront falls back to the platform default: a customer's page visibly
+	 * changes to someone else's template and back. The rule this replaces ("never half-updated")
+	 * was being enforced by a method that *guaranteed* a half-updated storefront.
+	 *
+	 * <p>Doing both in one transaction gives the stronger guarantee the rule was reaching for. The
+	 * row is written once; a reader either sees the old published config or the new one, never a
+	 * blend and never a gap. There is no window at all.
+	 */
+	@Transactional
+	public ShopTheme saveAndPublishTheme(Shop shop, UUID themeId, String configJson, String name,
+			UUID actorId) {
+		ShopTheme theme = requireOwnedTheme(shop, themeId);
+
+		// Publishing this one withdraws any other, rather than refusing. Two live themes cannot
+		// coexist (partial unique index on shop_id where is_published), and an owner clicking
+		// "Publish" on a second theme means "make this the live one", not "tell me I can't".
+		shopThemes.findByShopIdAndPublishedTrue(shop.getId())
+				.filter(live -> !live.getId().equals(themeId))
+				.ifPresent(live -> {
+					log.info("Withdrawing theme {} to publish {} for shop {}", live.getId(), themeId,
+							shop.getId());
+					live.unpublish();
+					shopThemes.saveAndFlush(live);
+				});
+
+		// replaceConfig still refuses a published theme, so the guard is lifted deliberately and
+		// only here — never in the plain save path, which must keep refusing.
+		theme.replaceConfigAllowingLive(validator.validateAndNormalise(configJson));
+		theme.rename(name);
+		theme.publish(false);
+
+		log.info("Theme {} saved and published for shop {} by {}", themeId, shop.getId(), actorId);
+		return shopThemes.saveAndFlush(theme);
+	}
+
+	/**
 	 * Publishes a theme.
 	 *
 	 * <p>Refuses a second published theme rather than silently replacing the live one. The partial

@@ -21,6 +21,7 @@ export const THEME_SCHEMA_VERSION = 1;
  */
 export const SECTION_TYPES = [
   'announcement-bar',
+  'site-header',
   'hero',
   'category-grid',
   'product-carousel',
@@ -43,6 +44,7 @@ export const SECTION_TYPES = [
   'divider',
   'spacer',
   'html',
+  'site-footer',
   'unknown-section',
 ] as const;
 
@@ -169,20 +171,53 @@ export type ThemeConfig = z.infer<typeof themeConfigSchema>;
  *
  * A shop must never be able to publish a document that leaves the storefront unrenderable, so
  * a failed parse degrades to a bare page with the problem reported, instead of a 500.
+ *
+ * <p>Accepts a JSON **string** as well as an object, because the theme crosses the wire as a string
+ * (`theme_template.config` and `shop_theme.config` are jsonb, serialised to a string by the API) and
+ * the alternative was two callers with different habits. One did `parseTheme(detail.config)` and
+ * the other did `parseTheme(JSON.stringify(draft))`; the first produced an empty theme and a
+ * `(root): Expected object, received string` issue, so the Appearance editor silently loaded no
+ * sections at all. Handling both here makes that mistake unmakeable.
  */
 export function parseTheme(input: unknown): {
   theme: ThemeConfig;
   issues: string[];
 } {
-  const result = themeConfigSchema.safeParse(input);
+  let value = input;
+
+  if (typeof value === 'string') {
+    try {
+      value = JSON.parse(value);
+    } catch {
+      // Malformed JSON. Reported as an issue rather than thrown, so a storefront degrades to a
+      // visible notice instead of a 500 in front of a customer.
+      return {
+        theme: emptyTheme(),
+        issues: ['(root): the theme document is not valid JSON'],
+      };
+    }
+  }
+
+  const result = themeConfigSchema.safeParse(value);
   if (result.success) {
     return { theme: result.data, issues: [] };
   }
   return {
-    theme: { schemaVersion: THEME_SCHEMA_VERSION, tokens: {}, sections: [], nav: { menu: [] }, footer: {} },
+    theme: emptyTheme(),
     issues: result.error.issues.map(
       (i) => `${i.path.join('.') || '(root)'}: ${i.message}`,
     ),
+  };
+}
+
+/** The document a failed parse degrades to: valid, empty, and renderable. */
+function emptyTheme(): ThemeConfig {
+  return {
+    schemaVersion: THEME_SCHEMA_VERSION,
+    tokens: {},
+    sections: [],
+    nav: { menu: [] },
+    footer: {},
   };
 }
 

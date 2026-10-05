@@ -20,7 +20,7 @@
 
 import type { CSSProperties, ReactNode } from 'react';
 
-import { SECTION_COMPONENTS } from './sections';
+import { SECTION_COMPONENTS, UnknownSection } from './sections';
 import type { SectionProps } from './sections';
 import { themeScopeStyle } from './tokens';
 import type { ThemeConfig } from './schema';
@@ -54,9 +54,9 @@ export function ThemeRenderer({
   className,
   showIssues = true,
 }: ThemeRendererProps) {
-  const { theme, issues } = parseTheme(
-    typeof config === 'string' ? safeParse(config) : config,
-  );
+  // `parseTheme` handles both an object and a JSON string, and reports malformed JSON as an
+  // issue rather than throwing, so a storefront degrades to a visible notice instead of a 500.
+  const { theme, issues } = parseTheme(config);
 
   const resolved = resolveSections(theme.sections, data);
 
@@ -134,10 +134,19 @@ function ThemeIssues({
 /**
  * Renders one section.
  *
- * The lookup is total — the map is a `Record` over the closed union, so TypeScript guarantees a
+ * <p>The lookup is total — the map is a `Record` over the closed union, so TypeScript guarantees a
  * component exists — with a runtime guard anyway. A theme persisted by a build that knew a type
  * this one does not must degrade to a visible placeholder, which is the entire point of
  * `unknown-section`.
+ *
+ * <p><b>Rendered as JSX, not invoked as a function.</b> This used to be `Component({ resolved })`.
+ * That is fine when the result goes straight to the server renderer, which is why the storefront
+ * was correct and nothing looked wrong. On the client it handed React a bare `ReactNode` produced
+ * by a function React never reconciled, and the section rendered as nothing at all. The Appearance
+ * preview showed a valid seven-section theme as an empty box — no error, no console warning.
+ *
+ * <p>Two renderers disagreeing about the same theme is exactly the failure this engine exists to
+ * prevent, and no amount of reading the code finds it: it needs a browser on both paths.
  */
 function Section({ resolved }: SectionProps): ReactNode {
   const Component = SECTION_COMPONENTS[resolved.section.type] as
@@ -145,23 +154,9 @@ function Section({ resolved }: SectionProps): ReactNode {
     | undefined;
 
   if (!Component) {
-    return SECTION_COMPONENTS['unknown-section']({ resolved });
+    return <UnknownSection resolved={resolved} />;
   }
-  return Component({ resolved });
-}
-
-/**
- * Parses a JSON string without throwing.
- *
- * `parseTheme` already degrades on a schema mismatch, but it would throw on malformed JSON, and a
- * storefront page is the wrong place for that.
- */
-function safeParse(raw: string): unknown {
-  try {
-    return JSON.parse(raw);
-  } catch {
-    return null;
-  }
+  return <Component resolved={resolved} />;
 }
 
 export type { StorefrontData, ResolvedSection };

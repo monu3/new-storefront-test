@@ -145,4 +145,20 @@ public class ShopTheme extends BaseEntity {
 		}
 		this.config = newConfig;
 	}
+
+	/**
+	 * Replaces the document on a published theme.
+	 *
+	 * <p>Exists only for {@code ThemeService.saveAndPublishTheme}, which writes the new config and
+	 * the published flag in the same transaction. The guarantee the plain {@link #replaceConfig}
+	 * exists to protect — a customer never sees a half-updated theme — comes from the transaction
+	 * boundary there, not from forbidding the write.
+	 *
+	 * <p>Deliberately not reachable from the ordinary save endpoint. That one must keep refusing,
+	 * because a bare save of a live theme really would leave customers looking at a work in
+	 * progress.
+	 */
+	public void replaceConfigAllowingLive(String newConfig) {
+		this.config = newConfig;
+	}
 }

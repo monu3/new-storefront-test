@@ -1,12 +1,16 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useState } from 'react';
 
 import { theme as themeApi } from '@store-app/api-client';
-import type { ThemeDetail, ThemeView } from '@store-app/api-client';
+import type { Dashboard, ThemeDetail, ThemeView } from '@store-app/api-client';
+import { authorizedFetch } from '@store-app/auth';
+import type { AuthAdapter } from '@store-app/auth';
 import {
   ThemeRenderer,
+  contrastRatio,
   createSection,
   paletteGroups,
   parseTheme,
+  readableForeground,
   sectionDefinition,
 } from '@store-app/theme-engine';
 import type { SectionType, StorefrontData, ThemeSection } from '@store-app/theme-engine';
@@ -27,6 +31,7 @@ import {
   SelectLabel,
   SelectTrigger,
   SelectValue,
+  Switch,
   Textarea,
 } from '@store-app/ui';
 
@@ -42,7 +47,7 @@ import {
  * refuses — so a customer mid-scroll never sees the layout move under them. That is why
  * "Publish" is a separate, deliberate action rather than a save.
  */
-export function ShopTheme() {
+export function ShopTheme({ auth }: { auth: AuthAdapter }) {
   const editor = useThemeEditor();
   const [themes, setThemes] = useState<ThemeView[]>([]);
 
@@ -66,39 +71,77 @@ export function ShopTheme() {
    */
   useEffect(() => {
     if (!draft) return;
-    setIssues(parseTheme(JSON.stringify(draft)).issues);
+    // parseTheme accepts an object, so no stringify needed here. The one that did stringify was
+    // written because the other caller passed a raw string, and the two drifted apart.
+    setIssues(parseTheme(draft).issues);
   }, [draft]);
 
-  /** Preview data. Real products would come from the shop endpoint; the shape is what matters. */
-  const previewData = useMemo<StorefrontData>(
-    () => ({
-      shopSlug: 'your-shop',
-      shopName: 'Your shop',
-      description: 'This is a preview. Nothing here is live until you publish.',
-      categories: [
-        { code: 'RICE', label: 'Rice & Grains', productCount: 12 },
-        { code: 'LENTIL', label: 'Lentils', productCount: 8 },
-        { code: 'SPICES', label: 'Spices', productCount: 24 },
-        { code: 'OIL', label: 'Cooking Oil', productCount: 5 },
-      ],
-      // Every field the type requires. The mock previously omitted id and slug, and compiled
-      // anyway, because ProductSummary had them optional — which is exactly how the live site
-      // ended up rendering "Rs. NaN" while every check passed.
-      featuredProducts: [
-        { id: 'p1', slug: 'sona-masoori-5kg', name: 'Sona Masoori 5kg', price: 45000, categoryLabel: 'Rice & Grains', purchasable: true },
-        { id: 'p2', slug: 'organic-red-lentils-1kg', name: 'Organic Red Lentils 1kg', price: 18000, categoryLabel: 'Lentils', purchasable: true },
-        { id: 'p3', slug: 'himalayan-salt-1kg', name: 'Himalayan Salt 1kg', price: 9000, categoryLabel: 'Spices', purchasable: true },
-        { id: 'p4', slug: 'mustard-oil-1l', name: 'Cold-pressed Mustard Oil 1L', price: 62000, categoryLabel: 'Cooking Oil', purchasable: true },
-      ],
-      latestProducts: [
-        { id: 'p5', slug: 'black-pepper-100g', name: 'Whole Black Pepper 100g', price: 14000, categoryLabel: 'Spices', purchasable: true },
-        { id: 'p6', slug: 'basmati-rice-1kg', name: 'Basmati Rice 1kg', price: 22000, categoryLabel: 'Rice & Grains', purchasable: true },
-        { id: 'p7', slug: 'red-lentils-2kg', name: 'Red Lentils 2kg', price: 32000, categoryLabel: 'Lentils', purchasable: true },
-      ],
-      assets: [],
-    }),
-    [],
-  );
+  /**
+   * The shop's real storefront payload, for the preview.
+   *
+   * <p>This used to be a hardcoded mock — "Your shop", "Sona Masoori 5kg", four invented
+   * categories. That is worse than no preview: an owner arranging sections against fake products is
+   * arranging them against a lie. The mock showed a tidy four-tile category grid and clean product
+   * cards, while their actual shop has ten categories and products with no photographs — so the
+   * layout they approved was never the layout they would get.
+   *
+   * <p>It now comes from the same public endpoint the live storefront page calls, so the editor and
+   * the published page resolve the same sections from the same data. Sharing the renderer (D73) is
+   * only half of "the preview matches the storefront"; the other half is sharing its <em>input</em>.
+   *
+   * <p>The slug comes from `/shop/dashboard` rather than a route parameter, because shop-scoped
+   * endpoints resolve the shop from the token and never from the URL (D35). The storefront endpoint
+   * is keyed by slug only because it is public — a customer with no token still has to reach it.
+   */
+  const [previewData, setPreviewData] = useState<StorefrontData | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      try {
+        const dash = await authorizedFetch(auth, '/api/v1/shop/dashboard');
+        if (!dash.ok) throw new Error(`dashboard request failed: HTTP ${dash.status}`);
+        const { shopSlug } = (await dash.json()) as Dashboard;
+
+        const res = await authorizedFetch(auth, `/api/v1/p/shops/${shopSlug}/storefront`);
+        if (!res.ok) throw new Error(`storefront request failed: HTTP ${res.status}`);
+        const body = (await res.json()) as {
+          shopSlug: string;
+          shopName: string;
+          description?: string | null;
+          logoUrl?: string | null;
+          coverImageUrl?: string | null;
+          followerCount?: number;
+          shopType?: string;
+          categories?: StorefrontData['categories'];
+          featuredProducts?: StorefrontData['featuredProducts'];
+          latestProducts?: StorefrontData['latestProducts'];
+          assets?: StorefrontData['assets'];
+        };
+        if (cancelled) return;
+        setPreviewData({
+          shopSlug: body.shopSlug,
+          shopName: body.shopName,
+          description: body.description ?? null,
+          logoUrl: body.logoUrl ?? null,
+          coverImageUrl: body.coverImageUrl ?? null,
+          followerCount: body.followerCount,
+          shopType: body.shopType,
+          categories: body.categories ?? [],
+          featuredProducts: body.featuredProducts ?? [],
+          latestProducts: body.latestProducts ?? [],
+          assets: body.assets ?? [],
+        });
+      } catch (e) {
+        if (cancelled) return;
+        setPreviewData(null);
+        setStatus(`Preview data unavailable: ${describeError(e)}`);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [auth]);
 
   useEffect(() => {
     void (async () => {
@@ -130,34 +173,27 @@ export function ShopTheme() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeId]);
 
-  async function save() {
+  /**
+   * One button: save and publish together.
+   *
+   * <p>This used to be "Unpublish first, then edit, then Publish", because the server refused to
+   * save a live theme. That was the worst possible shape for an owner — three steps to change a
+   * colour — and it was also worse for the customer it claimed to protect: in the gap between
+   * unpublish and publish the shop has no live theme, so its storefront falls back to the platform
+   * default and visibly becomes someone else's template.
+   *
+   * <p>`save-and-publish` does both in one transaction, so the storefront is never in a gap. The
+   * owner gets one button, and customers never see the shop blink.
+   */
+  async function publish() {
     if (!draft || !activeId) return;
     setBusy(true);
     setStatus(null);
     try {
-      const detail: ThemeDetail = await themeApi.save(activeId, JSON.stringify(draft));
+      const detail: ThemeDetail = await themeApi.saveAndPublish(activeId, JSON.stringify(draft));
       editor.markSaved();
       setIssues(detail.warnings);
-      setStatus('Draft saved.');
-    } catch (e) {
-      setStatus(describeError(e));
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function publish() {
-    if (!activeId) return;
-    setBusy(true);
-    setStatus(null);
-    try {
-      // Publish only after a successful save, so what goes live is what the editor is showing.
-      if (editor.dirty) {
-        await themeApi.save(activeId, JSON.stringify(editor.draft));
-        editor.markSaved();
-      }
-      await themeApi.publish(activeId);
-      setStatus('Published. Your storefront is live.');
+      setStatus('Live. Your storefront is updated.');
       const list = await themeApi.list();
       setThemes(list.themes);
     } catch (e) {
@@ -227,7 +263,7 @@ export function ShopTheme() {
             // the reference diverge. Outline plus a dot says the same thing honestly.
             <Badge variant="outline">
               <span aria-hidden className="mr-1.5 inline-block size-1.5 rounded-full bg-amber-500" />
-              Unsaved changes
+              Changes not published yet
             </Badge>
           ) : null}
           <Button variant="outline" onClick={editor.undo} disabled={!editor.past.length}>
@@ -236,11 +272,12 @@ export function ShopTheme() {
           <Button variant="outline" onClick={editor.redo} disabled={!editor.future.length}>
             Redo
           </Button>
-          <Button variant="secondary" onClick={save} disabled={busy || !editor.dirty}>
-            Save draft
-          </Button>
-          <Button onClick={publish} disabled={busy}>
-            Publish
+          {/* One button, and it says what it does.
+              "Save draft" and "Publish" side by side invited the question "which one?", and the
+              answer was "publish, but only after you work around the server" — which is not a
+              question a shop owner should have to reason about to change a colour. */}
+          <Button onClick={publish} disabled={busy || !editor.dirty}>
+            {busy ? 'Publishing…' : 'Publish changes'}
           </Button>
         </div>
       </header>
@@ -342,11 +379,26 @@ export function ShopTheme() {
           </CardHeader>
           <CardContent className="p-0">
             {/* The same component the storefront renders. Not a mock-up of it. */}
-            <ThemeRenderer
-              config={draft}
-              data={previewData}
-              className="max-h-[70vh] overflow-y-auto p-4"
-            />
+            {previewData ? (
+              <ThemeRenderer
+                config={draft}
+                data={previewData}
+                className="max-h-[70vh] overflow-y-auto p-4"
+              />
+            ) : (
+              // A preview with no data is a preview of nothing: every commerce section renders
+              // its empty state and the owner judges a layout against zero products. Saying so
+              // plainly beats showing a plausible-looking page no shop will ever have.
+              <div className="flex h-64 items-center justify-center p-4 text-center text-sm text-muted-foreground">
+                <p>
+                  Loading your shop&rsquo;s products and categories for the preview…
+                  <br />
+                  <span className="text-xs">
+                    If this stays empty, your shop has no published products yet.
+                  </span>
+                </p>
+              </div>
+            )}
           </CardContent>
         </Card>
 
@@ -357,18 +409,25 @@ export function ShopTheme() {
               <CardTitle>Colours and type</CardTitle>
             </CardHeader>
             <CardContent className="space-y-3">
+              <p className="text-xs text-muted-foreground">
+                These colours are your shop&rsquo;s identity. Text colour is worked out for you, so
+                buttons stay readable whatever you choose.
+              </p>
               <TokenField
                 label="Primary"
+                hint="Buttons, links and prices"
                 value={draft.tokens.primary ?? '#16a34a'}
                 onChange={(primary) => editor.updateTokens({ primary })}
               />
               <TokenField
                 label="Background"
+                hint="The page behind everything"
                 value={draft.tokens.background ?? '#ffffff'}
                 onChange={(background) => editor.updateTokens({ background })}
               />
               <TokenField
                 label="Accent"
+                hint="Badges, highlights and sale tags"
                 value={draft.tokens.accent ?? '#f97316'}
                 onChange={(accent) => editor.updateTokens({ accent })}
               />
@@ -465,6 +524,152 @@ function SectionInspector({
   const props = section.props ?? {};
 
   const set = (key: string, value: unknown) => onChange({ ...props, [key]: value });
+
+  // Header and footer get a dedicated editor rather than raw fields. Asking an owner to type
+  // structured JSON into a textarea is not "editing"; it is a puzzle, and it is the main reason
+  // this screen felt like a developer tool.
+  if (section.type === 'site-header') {
+    return (
+      <Card>
+        <CardHeader>
+          <CardTitle>Header</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <p className="text-xs text-muted-foreground">{definition.description}</p>
+
+          <ToggleRow
+            id={`${section.id}-shopName`}
+            label="Show shop name"
+            checked={props.showShopName !== false}
+            onChange={(v) => set('showShopName', v)}
+          />
+          <ToggleRow
+            id={`${section.id}-logo`}
+            label="Show logo"
+            checked={props.showLogo !== false}
+            onChange={(v) => set('showLogo', v)}
+          />
+          <ToggleRow
+            id={`${section.id}-search`}
+            label="Show search"
+            checked={props.showSearch !== false}
+            onChange={(v) => set('showSearch', v)}
+          />
+          <ToggleRow
+            id={`${section.id}-sticky`}
+            label="Keep visible while scrolling"
+            checked={props.sticky !== false}
+            onChange={(v) => set('sticky', v)}
+          />
+
+          <LinkListEditor
+            label="Menu links"
+            emptyHint="Leave empty and your shop's categories are used automatically."
+            links={Array.isArray(props.links) ? (props.links as Record<string, unknown>[]) : []}
+            onChange={(links) => set('links', links)}
+          />
+
+          <p className="text-xs text-muted-foreground">
+            Category links look like <code>/c/rice</code> — the part after your shop address.
+          </p>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  if (section.type === 'site-footer') {
+    const columns = Array.isArray(props.columns) ? (props.columns as Record<string, unknown>[]) : [];
+    return (
+      <Card>
+        <CardHeader>
+          <CardTitle>Footer</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <p className="text-xs text-muted-foreground">{definition.description}</p>
+
+          <div>
+            <Label htmlFor={`${section.id}-heading`}>Heading</Label>
+            <Input
+              id={`${section.id}-heading`}
+              className="mt-1"
+              value={String(props.heading ?? '')}
+              onChange={(e) => set('heading', e.target.value)}
+              placeholder="e.g. Get in touch"
+            />
+          </div>
+
+          <div>
+            <Label htmlFor={`${section.id}-about`}>About your shop</Label>
+            <Textarea
+              id={`${section.id}-about`}
+              className="mt-1"
+              rows={3}
+              value={String(props.about ?? '')}
+              onChange={(e) => set('about', e.target.value)}
+              placeholder="A sentence about your shop"
+            />
+          </div>
+
+          <ToggleRow
+            id={`${section.id}-badges`}
+            label="Show payment methods"
+            checked={props.showPaymentBadges !== false}
+            onChange={(v) => set('showPaymentBadges', v)}
+          />
+
+          <div>
+            <Label>Link columns</Label>
+            <p className="text-xs text-muted-foreground">
+              Group your links, e.g. &ldquo;Shop&rdquo;, &ldquo;Help&rdquo;, &ldquo;Contact&rdquo;.
+            </p>
+            <div className="mt-2 space-y-3">
+              {columns.map((col, i) => (
+                <div key={i} className="rounded-md border p-3">
+                  <div className="flex items-center gap-2">
+                    <Input
+                      aria-label={`Column ${i + 1} title`}
+                      value={String(col.title ?? '')}
+                      placeholder="Column title"
+                      onChange={(e) => {
+                        const next = [...columns];
+                        next[i] = { ...col, title: e.target.value };
+                        set('columns', next);
+                      }}
+                    />
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      aria-label={`Remove column ${i + 1}`}
+                      onClick={() => set('columns', columns.filter((_, j) => j !== i))}
+                    >
+                      ✕
+                    </Button>
+                  </div>
+                  <LinkListEditor
+                    label=""
+                    links={Array.isArray(col.links) ? (col.links as Record<string, unknown>[]) : []}
+                    onChange={(links) => {
+                      const next = [...columns];
+                      next[i] = { ...col, links };
+                      set('columns', next);
+                    }}
+                  />
+                </div>
+              ))}
+              <Button
+                variant="outline"
+                size="sm"
+                className="w-full"
+                onClick={() => set('columns', [...columns, { title: '', links: [] }])}
+              >
+                Add a column
+              </Button>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+    );
+  }
 
   const textProps = ['text', 'heading', 'subheading', 'body', 'imageUrl', 'href'];
   const usedTextProps = textProps.filter((k) => k in props);
@@ -567,28 +772,205 @@ function SectionInspector({
   );
 }
 
+/**
+ * A labelled on/off row.
+ *
+ * <p>A `<Switch>` needs a real `<label for>`, and the control has to be labelable — which is the
+ * same lesson as the product form's category field, where a label pointing at a Radix trigger
+ * associated with nothing.
+ */
+function ToggleRow({
+  id,
+  label,
+  checked,
+  onChange,
+}: {
+  id: string;
+  label: string;
+  checked: boolean;
+  onChange: (value: boolean) => void;
+}) {
+  return (
+    <div className="flex items-center justify-between gap-3">
+      <Label htmlFor={id}>{label}</Label>
+      <Switch id={id} checked={checked} onCheckedChange={onChange} />
+    </div>
+  );
+}
+
+/**
+ * Adds, edits and removes `{ label, href }` pairs.
+ *
+ * <p>Written because the alternative was asking an owner to hand-edit an array of objects. Two
+ * fields and an add/remove button is the whole job; anything more is a developer interface wearing
+ * a shop owner's clothes.
+ */
+function LinkListEditor({
+  label,
+  links,
+  onChange,
+  emptyHint,
+}: {
+  label: string;
+  links: Record<string, unknown>[];
+  onChange: (links: Record<string, unknown>[]) => void;
+  emptyHint?: string;
+}) {
+  const update = (i: number, key: string, value: string) => {
+    const next = [...links];
+    next[i] = { ...next[i], [key]: value };
+    onChange(next);
+  };
+
+  return (
+    <div>
+      {label ? <Label>{label}</Label> : null}
+      {links.length === 0 && emptyHint ? (
+        <p className="text-xs text-muted-foreground">{emptyHint}</p>
+      ) : null}
+
+      <div className="mt-1 space-y-2">
+        {links.map((link, i) => (
+          <div key={i} className="flex items-center gap-2">
+            <Input
+              aria-label={`Link ${i + 1} text`}
+              value={String(link.label ?? '')}
+              placeholder="Text"
+              onChange={(e) => update(i, 'label', e.target.value)}
+            />
+            <Input
+              aria-label={`Link ${i + 1} address`}
+              value={String(link.href ?? '')}
+              placeholder="/c/rice"
+              onChange={(e) => update(i, 'href', e.target.value)}
+            />
+            <Button
+              variant="ghost"
+              size="sm"
+              aria-label={`Remove link ${i + 1}`}
+              onClick={() => onChange(links.filter((_, j) => j !== i))}
+            >
+              ✕
+            </Button>
+          </div>
+        ))}
+      </div>
+
+      <Button
+        variant="outline"
+        size="sm"
+        className="mt-2 w-full"
+        onClick={() => onChange([...links, { label: '', href: '' }])}
+      >
+        Add a link
+      </Button>
+    </div>
+  );
+}
+
+/**
+ * Presets offered beside the picker.
+ *
+ * <p>An empty colour input is not a colour, so an owner opening the editor has to know what to
+ * type. These are hand-picked for legibility against white — every one of them clears 4.5:1 as a
+ * button background with white text — which is the same rule the renderer applies automatically,
+ * so a preset can never produce an unreadable button.
+ */
+const COLOUR_PRESETS: ReadonlyArray<{ name: string; value: string }> = [
+  { name: 'Emerald', value: '#16a34a' },
+  { name: 'Forest', value: '#15803d' },
+  { name: 'Ocean', value: '#0ea5e9' },
+  { name: 'Indigo', value: '#4f46e5' },
+  { name: 'Violet', value: '#7c3aed' },
+  { name: 'Rose', value: '#e11d48' },
+  { name: 'Amber', value: '#d97706' },
+  { name: 'Slate', value: '#334155' },
+  { name: 'Ink', value: '#0f172a' },
+];
+
+/**
+ * One editable colour token.
+ *
+ * <p>The colour input alone was not enough. Three things are added because the owner's actual
+ * question is never "what is the hex value" but "will my shop still look right":
+ *
+ * <ol>
+ *   <li><b>Presets.</b> Every vertical in the catalogue needs a different feel, and guessing at a
+ *       hex is how a shop ends up with an arbitrary colour. One click gives a known-good colour.</li>
+ *   <li><b>A live swatch of what it will actually look like.</b> The colour swatch shows the raw
+ *       hex; this shows it applied to a button, which is how it appears on the storefront — and
+ *       which is where a bad choice becomes visible.</li>
+ *   <li><b>The contrast ratio against the text that will sit on it.</b> WCAG AA for body text is
+ *       4.5:1. Reporting the owner's own number is actionable; "this may be hard to read" is not.
+ *       </li>
+ * </ol>
+ */
 function TokenField({
   label,
   value,
   onChange,
+  hint,
 }: {
   label: string;
   value: string;
   onChange: (value: string) => void;
+  /** What this colour is used for, e.g. "buttons and links". */
+  hint?: string;
 }) {
+  const valid = /^#[0-9a-fA-F]{6}$/.test(value);
+  // A malformed value is already reported by the validator; showing a second, harsher warning here
+  // would just be noise on a field the owner is mid-way through typing into.
+  const derived = valid ? readableForeground(value) : null;
+  const ratio = derived ? contrastRatio(derived, value) : null;
+  const passesAA = ratio !== null && ratio >= 4.5;
+
   return (
     <div>
       <Label htmlFor={`token-${label}`}>{label}</Label>
+      {hint ? <p className="text-xs text-muted-foreground">{hint}</p> : null}
       <div className="mt-1 flex items-center gap-2">
         <input
           id={`token-${label}`}
           type="color"
           aria-label={`${label} colour`}
-          value={/^#[0-9a-fA-F]{6}$/.test(value) ? value : '#000000'}
+          value={valid ? value : '#000000'}
           onChange={(e) => onChange(e.target.value)}
-          className="h-9 w-12 cursor-pointer rounded border"
+          className="h-9 w-12 shrink-0 cursor-pointer rounded border"
         />
         <Input value={value} onChange={(e) => onChange(e.target.value)} />
+      </div>
+
+      {/* What the storefront will actually paint, plus the contrast it produces. */}
+      {valid && derived ? (
+        <div className="mt-2 flex items-center gap-2">
+          <span
+            className="inline-flex h-7 items-center rounded-md px-3 text-xs font-medium"
+            style={{ backgroundColor: value, color: derived }}
+          >
+            Button
+          </span>
+          <span
+            className={`text-xs ${passesAA ? 'text-muted-foreground' : 'font-medium text-amber-600'}`}
+          >
+            {ratio?.toFixed(1)}:1 contrast {passesAA ? '' : '— below 4.5:1, text may be hard to read'}
+          </span>
+        </div>
+      ) : null}
+
+      <div className="mt-2 flex flex-wrap gap-1">
+        {COLOUR_PRESETS.map((p) => (
+          <button
+            key={p.value}
+            type="button"
+            title={`${p.name} ${p.value}`}
+            aria-label={`Use ${p.name} for ${label}`}
+            onClick={() => onChange(p.value)}
+            style={{ backgroundColor: p.value }}
+            className={`size-6 rounded border transition-transform hover:scale-110 ${
+              value.toLowerCase() === p.value ? 'ring-2 ring-foreground ring-offset-1' : ''
+            }`}
+          />
+        ))}
       </div>
     </div>
   );

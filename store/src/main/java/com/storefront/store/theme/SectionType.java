@@ -23,6 +23,7 @@ import java.util.Set;
 public enum SectionType {
 
 	ANNOUNCEMENT_BAR("announcement-bar"),
+	SITE_HEADER("site-header"),
 	HERO("hero"),
 	CATEGORY_GRID("category-grid"),
 	PRODUCT_CAROUSEL("product-carousel"),
@@ -45,6 +46,7 @@ public enum SectionType {
 	DIVIDER("divider"),
 	SPACER("spacer"),
 	HTML("html"),
+	SITE_FOOTER("site-footer"),
 	UNKNOWN_SECTION("unknown-section");
 
 	/** The wire value, which is what appears in the theme JSON. */

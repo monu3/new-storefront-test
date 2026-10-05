@@ -72,6 +72,10 @@ store:
     # Server-configured on purpose: a payment return url the browser can influence is an open
     # redirect, and an open redirect on a payment page is a phishing page.
     base-url: ${STOREFRONT_BASE_URL:http://localhost:3000}
+    # Shared secret for POST /api/revalidate on the storefront. When set, the API asks the storefront
+    # to drop its cached copy of a shop's page the moment a theme is published, so an owner never sees
+    # "published" while the page still serves the previous design. Left blank it is simply skipped.
+    revalidate-secret: ${STOREFRONT_REVALIDATE_SECRET:}
 
   # Merchant-secret encryption passphrase for eSewa and bank details. Deliberately has no
   # default: without it, PaymentMethodService refuses to store secrets and says so, which is far

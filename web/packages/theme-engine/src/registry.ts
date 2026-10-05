@@ -34,6 +34,20 @@ export const SECTION_DEFINITIONS: Record<SectionType, SectionDefinition> = {
     defaultProps: { text: 'Free delivery over Rs. 2000', dismissible: true, link: '' },
     implemented: true,
   },
+  'site-header': {
+    type: 'site-header',
+    label: 'Header',
+    description: 'The bar at the very top: your shop name, logo and menu links.',
+    group: 'Layout',
+    defaultProps: {
+      showLogo: true,
+      showShopName: true,
+      showSearch: true,
+      links: [],
+      sticky: true,
+    },
+    implemented: true,
+  },
   hero: {
     type: 'hero',
     label: 'Hero',
@@ -218,6 +232,21 @@ export const SECTION_DEFINITIONS: Record<SectionType, SectionDefinition> = {
     description: 'Raw HTML. Sanitised on render; no scripts, styles or iframes.',
     group: 'Content',
     defaultProps: { html: '' },
+    implemented: true,
+  },
+  'site-footer': {
+    type: 'site-footer',
+    label: 'Footer',
+    description: 'The block at the bottom: contact details, links and payment badges.',
+    group: 'Layout',
+    defaultProps: {
+      heading: '',
+      about: '',
+      showPaymentBadges: true,
+      showSocial: false,
+      columns: [],
+      copyright: '',
+    },
     implemented: true,
   },
   'unknown-section': {

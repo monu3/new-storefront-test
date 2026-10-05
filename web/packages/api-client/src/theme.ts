@@ -98,9 +98,20 @@ export const theme = {
   list: () => api.get<ThemeListResponse>('/api/v1/shop/theme'),
   get: (themeId: string) => api.get<ThemeDetail>(`/api/v1/shop/theme/${themeId}`),
 
-  /** Saving is refused while the theme is live; unpublish first. */
+  /** Saving is refused while the theme is live; use `saveAndPublish` instead. */
   save: (themeId: string, config: string, name?: string) =>
     api.patch<ThemeDetail>(`/api/v1/shop/theme/${themeId}`, { config, name }),
+
+  /**
+   * Saves and publishes in one request.
+   *
+   * <p>This is what the Appearance screen uses, and it should be the only way a theme goes live
+   * from that screen. The separate save-then-publish pair forced an owner to unpublish first, which
+   * left the storefront falling back to the platform default in between — a worse outcome for a
+   * customer than the half-updated theme the rule was written to prevent.
+   */
+  saveAndPublish: (themeId: string, config: string, name?: string) =>
+    api.post<ThemeDetail>(`/api/v1/shop/theme/${themeId}/save-and-publish`, { config, name }),
 
   publish: (themeId: string) =>
     api.post<ThemeView>(`/api/v1/shop/theme/${themeId}/publish`, {}),

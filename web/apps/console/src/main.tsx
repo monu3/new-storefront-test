@@ -138,7 +138,7 @@ const router = createBrowserRouter([
         path: 'shop/theme',
         element: (
           <RequireRole auth={auth} roles={['ROLE_SHOP']}>
-            <ShopTheme />
+            <ShopTheme auth={auth} />
           </RequireRole>
         ),
       },
