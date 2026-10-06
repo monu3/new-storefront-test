@@ -53,11 +53,35 @@ function SafeHref({ href, children, className }: { href: string; children: React
 // Commerce
 // ---------------------------------------------------------------------------
 
+/**
+ * One product tile.
+ *
+ * <p>Wrapped in a link to the product page. It was not, and that made the storefront read-only: a
+ * customer could see a well-formed grid of products and had no way to reach any of them. The theme
+ * engine's own links (`/c/...`) worked because they were written as anchors; these were built as
+ * plain divs, which is the kind of omission that only shows up when someone tries to buy something.
+ *
+ * <p>The whole card is one link rather than a link around the image and another around the title.
+ * Two targets for one product is a decision the customer has to make, and they get it wrong
+ * roughly half the time.
+ *
+ * <p>Anchored with {@link SafeHref}, not a framework `<Link>`. This package is shared by the
+ * Next.js storefront and the Vite console's editor preview, so it cannot import either app's router
+ * — a rule the plan enforces with an ESLint boundary. A plain anchor works in both and keeps the
+ * preview's markup identical to the live page's.
+ */
 function ProductCard({ product }: { product: ProductSummary }) {
   const discounted = product.hasDiscount || (product.compareAt ?? 0) > product.price;
+  const href = `/s/${product.shopSlug ?? ''}/p/${product.slug}`;
+  const unavailable = product.purchasable === false;
 
   return (
-    <div className="group flex flex-col overflow-hidden rounded-lg border bg-card text-card-foreground">
+    <SafeHref
+      href={href}
+      className={`group flex flex-col overflow-hidden rounded-lg border bg-card text-card-foreground transition-colors hover:bg-muted ${
+        unavailable ? 'opacity-60' : ''
+      }`}
+    >
       <div className="aspect-square w-full overflow-hidden bg-muted">
         {product.imageUrl ? (
           // eslint-disable-next-line @next/next/no-img-element
@@ -86,8 +110,11 @@ function ProductCard({ product }: { product: ProductSummary }) {
             </span>
           ) : null}
         </div>
+        {unavailable ? (
+          <span className="text-xs text-muted-foreground">Out of stock</span>
+        ) : null}
       </div>
-    </div>
+    </SafeHref>
   );
 }
 

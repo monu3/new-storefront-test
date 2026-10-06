@@ -58,6 +58,14 @@ export interface ProductSummary {
   hasDiscount?: boolean;
   imageUrl?: string | null;
   purchasable?: boolean;
+  /**
+   * The shop this product belongs to.
+   *
+   * <p>Not sent by the API — the storefront payload is already scoped to one shop, so repeating it
+   * per product would be redundant. Added by the resolver from the shop it already holds, because a
+   * product card has to build an absolute link and a bare `/p/slug` would not resolve.
+   */
+  shopSlug?: string;
 }
 
 export interface ThemeAssetData {
@@ -142,7 +150,7 @@ export function resolveSection(section: ThemeSection, data: StorefrontData): Res
 
   return {
     section,
-    products,
+    products: products.map((p) => ({ ...p, shopSlug: data.shopSlug })),
     categories,
     asset: resolveAsset(section, data),
     shop: {

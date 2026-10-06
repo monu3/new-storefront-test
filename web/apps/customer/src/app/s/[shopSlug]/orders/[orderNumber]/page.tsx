@@ -1,17 +1,18 @@
-import { Suspense } from 'react';
-
-import { CustomerOrderDetail } from '../../../../account/components';
+import { OrderConfirmation } from './confirmation';
 
 /**
- * Four levels up: page.tsx sits at app/s/[shopSlug]/orders/[orderNumber]/, so `../../../..` is app/.
+ * Order confirmation.
  *
- * <p>Suspense is required because the detail component reads route params during prerendering; see
- * the note on the orders page.
+ * <p>Reads the order the checkout page stashed, rather than calling the account's customer-scoped
+ * endpoint. Guest checkout is allowed (D50), so the person who just placed this order has no token
+ * and that endpoint would answer 401 — leaving a customer staring at an empty shell immediately
+ * after a successful purchase.
  */
-export default function OrderPage() {
-  return (
-    <Suspense fallback={<div className="h-64 animate-pulse rounded-xl bg-muted" />}>
-      <CustomerOrderDetail />
-    </Suspense>
-  );
+export default async function OrderPage({
+  params,
+}: {
+  params: Promise<{ shopSlug: string; orderNumber: string }>;
+}) {
+  const { shopSlug, orderNumber } = await params;
+  return <OrderConfirmation shopSlug={shopSlug} orderNumber={orderNumber} />;
 }
