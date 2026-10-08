@@ -6,9 +6,11 @@ import {
   Bell,
   ChevronRight,
   CircleHelp,
+  CreditCard,
   FileText,
   Gauge,
   Image,
+  Landmark,
   LayoutGrid,
   LogOut,
   Percent,
@@ -16,6 +18,7 @@ import {
   ShoppingBag,
   Sparkles,
   Store,
+  TrendingUp,
   Users,
 } from 'lucide-react';
 
@@ -81,7 +84,16 @@ export function AppShell({ auth }: { auth: AuthAdapter }) {
       if (!response.ok) throw new Error(`Dashboard request failed: ${response.status}`);
       return (await response.json()) as Dashboard;
     },
-    enabled: user.session.authenticated,
+    // <b>Shop owners only.</b>
+    //
+    // <p>This used to be gated on "is authenticated", which meant an admin — who owns no shop —
+    // fired it on every admin page and got a 403 it has no way to act on. The response is used for
+    // the shop identity chip, the follower count and the "publish my shop" switch, all of which are
+    // shop-only concepts, so there was never a reason for an admin to ask.
+    //
+    // <p>It is worth fixing rather than tolerating: a 403 in the console on every admin screen is
+    // background noise that will hide a real 403 the day one appears.
+    enabled: user.session.authenticated && user.session.roles.includes(APP_ROLE.SHOP),
     staleTime: 60_000,
   });
 
@@ -387,6 +399,10 @@ const ROUTE_TITLES: Array<{ path: string; label: string }> = [
   { path: '/shop/discounts', label: 'Discounts' },
   { path: '/shop/media', label: 'Media Library' },
   { path: '/shop/audience', label: 'Audience' },
+  { path: '/shop/billing', label: 'Plan & billing' },
+  { path: '/admin/wallet', label: 'Wallet approvals' },
+  { path: '/admin/revenue', label: 'Revenue' },
+  { path: '/admin/plans', label: 'Plans' },
 ];
 
 // -------------------------------------------------------------------------- nav
@@ -405,11 +421,15 @@ const SHOP_NAV: NavItem[] = [
   { to: '/shop/discounts', label: 'Discounts', icon: Percent },
   { to: '/shop/media', label: 'Media', icon: Image },
   { to: '/shop/theme', label: 'Appearance', icon: Sparkles },
+  { to: '/shop/billing', label: 'Plan & billing', icon: CreditCard },
   { to: '/shop/settings', label: 'Settings', icon: Settings },
 ];
 
 const ADMIN_NAV: NavItem[] = [
   { to: '/admin', label: 'Dashboard', icon: Gauge },
+  { to: '/admin/wallet', label: 'Wallet approvals', icon: Landmark },
+  { to: '/admin/revenue', label: 'Revenue', icon: TrendingUp },
+  { to: '/admin/plans', label: 'Plans', icon: CreditCard },
   { to: '/admin/shops', label: 'Shops', icon: Store },
   { to: '/admin/reports', label: 'Reports', icon: LayoutGrid },
   { to: '/admin/settings', label: 'Settings', icon: Settings },

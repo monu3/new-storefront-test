@@ -52,6 +52,7 @@ public class ProductService {
 	private final ProductRepository products;
 	private final ProductVariantRepository variants;
 	private final CategoryValidator categories;
+	private final com.storefront.store.subscription.EntitlementService entitlements;
 	private final MediaAssetRepository mediaAssets;
 
 	/**
@@ -81,6 +82,20 @@ public class ProductService {
 			String slugPreference, String shortDescription, String description) {
 
 		categories.validate(shop.getType(), category);
+
+		// The plan's product cap, checked before anything is written.
+		//
+		// <p>Checked here rather than in the controller because a product can arrive from three
+		// places -- the console's add form, a CSV import, and a future API client -- and a cap
+		// enforced by whichever caller remembers to check it is a cap the other two do not have.
+		//
+		// <p>`adding` is 1 because this creates one product. The CSV path passes its row count so a
+		// 400-row import against a 25-product allowance is refused with the real numbers rather
+		// than accepted and then failing on row 26.
+		entitlements.requireCapacity(shop.getId(),
+				com.storefront.store.subscription.FeatureKey.MAX_PRODUCTS,
+				products.countByShopIdAndDeletedAtIsNull(shop.getId()),
+				1);
 
 		Product product = new Product(shop.getId(), name,
 				allocateSlug(shop.getId(), name, slugPreference), category);

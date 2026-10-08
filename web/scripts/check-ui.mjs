@@ -131,6 +131,39 @@ const targets = [
         p.evaluate(() => getComputedStyle(document.body).margin !== '16px')],
     ],
   },
+  {
+    // Phase 6. These are guarded routes, so unauthenticated they must land on /login rather than
+    // white-page -- the same property the orders route is checked for. The authenticated rendering
+    // of all three is covered by scripts/check-phase6.mjs, which signs in.
+    name: 'console: subscription route guards',
+    url: 'http://localhost:5173/shop/billing',
+    expect: [
+      ['does not white-page', (p) =>
+        p.evaluate(() => document.getElementById('root')?.children.length > 0)],
+      ['lands somewhere real', (p) =>
+        p.evaluate(() => location.pathname === '/login' || location.pathname.startsWith('/shop'))],
+    ],
+  },
+  {
+    name: 'console: admin revenue route guards',
+    url: 'http://localhost:5173/admin/revenue',
+    expect: [
+      ['does not white-page', (p) =>
+        p.evaluate(() => document.getElementById('root')?.children.length > 0)],
+      ['lands somewhere real', (p) =>
+        p.evaluate(() => location.pathname === '/login' || location.pathname.startsWith('/admin'))],
+    ],
+  },
+  {
+    name: 'console: admin plans route guards',
+    url: 'http://localhost:5173/admin/plans',
+    expect: [
+      ['does not white-page', (p) =>
+        p.evaluate(() => document.getElementById('root')?.children.length > 0)],
+      ['lands somewhere real', (p) =>
+        p.evaluate(() => location.pathname === '/login' || location.pathname.startsWith('/admin'))],
+    ],
+  },
 ];
 
 const browser = await chromium.launch({ channel: 'chrome' });

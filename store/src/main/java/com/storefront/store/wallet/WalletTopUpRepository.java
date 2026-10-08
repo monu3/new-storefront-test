@@ -1,6 +1,7 @@
 package com.storefront.store.wallet;
 
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 
 import org.springframework.data.domain.Page;
@@ -29,4 +30,13 @@ public interface WalletTopUpRepository extends JpaRepository<WalletTopUpRequest,
 	long countByStatus(WalletTopUpRequest.Status status);
 
 	long countByShopIdAndStatus(UUID shopId, WalletTopUpRequest.Status status);
+
+	/**
+	 * The request that pays for a subscription, if there is one.
+	 *
+	 * <p>Exists so a test -- and the admin's queue -- can find a subscription's payment by the
+	 * subscription rather than only by a top-up id the shop has to have kept. It also makes the
+	 * "was refused at submit time" assertion possible: nothing was created, so nothing is found.
+	 */
+	Optional<WalletTopUpRequest> findBySubscriptionId(UUID subscriptionId);
 }

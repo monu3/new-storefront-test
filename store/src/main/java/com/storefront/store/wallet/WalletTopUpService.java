@@ -48,6 +48,55 @@ public class WalletTopUpService {
 		return request;
 	}
 
+	/**
+	 * Records a claim that money was transferred, for a queued subscription request.
+	 *
+	 * <p>The amount comes from the <em>plan</em>, not from the caller. A shop cannot ask to be
+	 * charged one plan's price and be granted another, and it cannot understate the transfer to make
+	 * approval cheaper — {@link WalletTopUpRequest#forSubscription} re-checks the amount against the
+	 * plan before the row is written, so a mismatch never reaches the admin's queue.
+	 *
+	 * <p>One method rather than {@code request(...)} followed by a link, because the link has to
+	 * happen before the insert: {@code request} commits on return, so setting the subscription
+	 * afterwards would mutate a detached entity and be silently discarded. That failure would look
+	 * exactly like a working flow until an admin approved a request that started nothing.
+	 *
+	 * @param subscription the shop's own PENDING_PAYMENT request; its plan sets the amount
+	 */
+	@Transactional
+	public WalletTopUpRequest requestForSubscription(UUID shopId, Object subscription,
+			WalletTopUpRequest.Method method, String reference, UUID proofMediaId, String note) {
+
+		// Typed loosely to keep the wallet package free of a dependency on the subscription package.
+		// The four values needed are read through this small interface instead.
+		SubscriptionLink link = (SubscriptionLink) subscription;
+
+		WalletTopUpRequest request = new WalletTopUpRequest(
+				shopId, link.priceMinor(), method, reference, proofMediaId, note);
+		request.forSubscription(link.subscriptionId(), link.planId(), link.priceMinor());
+
+		WalletTopUpRequest saved = requests.saveAndFlush(request);
+		log.info("Subscription top-up of {} requested by shop {} for subscription {} via {}",
+				link.priceMinor(), shopId, link.subscriptionId(), method);
+		return saved;
+	}
+
+	/**
+	 * What {@link #requestForSubscription} needs from a subscription, without depending on it.
+	 *
+	 * <p>The subscription package implements this on {@code ShopSubscription}. A narrow interface is
+	 * used rather than a concrete type so {@code wallet} stays independent of {@code subscription};
+	 * the alternative -- passing four loose arguments - is how a caller ends up pairing one
+	 * subscription's id with another's plan.
+	 */
+	public interface SubscriptionLink {
+		UUID subscriptionId();
+
+		UUID planId();
+
+		long priceMinor();
+	}
+
 	@Transactional(readOnly = true)
 	public Page<WalletTopUpRequest> forShop(UUID shopId, Pageable pageable) {
 		return requests.findByShopIdOrderByCreatedAtDesc(shopId, pageable);
@@ -102,6 +151,20 @@ public class WalletTopUpService {
 	@Transactional(readOnly = true)
 	public long pendingCount() {
 		return requests.countByStatus(WalletTopUpRequest.Status.PENDING);
+	}
+
+	/**
+	 * A request, or 404.
+	 *
+	 * <p>Public because the subscription flow has to read the request before approving it — it needs
+	 * to know which subscription is being paid for, and approval itself must stay a single
+	 * all-or-nothing step. Exposing the loader rather than a second read of the repository keeps one
+	 * definition of what "not found" means for top-ups.
+	 */
+	@Transactional(readOnly = true)
+	public WalletTopUpRequest require(UUID requestId) {
+		return requests.findById(requestId)
+				.orElseThrow(() -> new TopUpNotFoundException(requestId));
 	}
 
 	private WalletTopUpRequest load(UUID requestId) {

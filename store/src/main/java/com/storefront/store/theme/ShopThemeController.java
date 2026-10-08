@@ -48,6 +48,7 @@ public class ShopThemeController {
 
 	private final ThemeService themes;
 	private final TenantGuard tenantGuard;
+	private final com.storefront.store.subscription.EntitlementService entitlements;
 	private final CurrentUser currentUser;
 	private final StorefrontCacheInvalidator cacheInvalidator;
 
@@ -96,7 +97,11 @@ public class ShopThemeController {
 			description = "Filtered by the shop's type and subscription tier.")
 	public List<MarketplaceEntry> marketplace() {
 		Shop shop = tenantGuard.requireOwnedShop();
-		boolean subscribed = !shop.paysCommission();
+
+		// Read from the entitlement rather than from `!shop.paysCommission()`. They agree today, but
+		// they are different questions, and the filter here and the gate in `installTemplate` must
+		// not be able to drift apart.
+		boolean subscribed = entitlements.commissionsWaived(shop.getId());
 
 		return themes.marketplaceFor(shop, subscribed).stream()
 				.map(t -> new MarketplaceEntry(

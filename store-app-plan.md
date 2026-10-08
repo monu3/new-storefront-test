@@ -1516,11 +1516,29 @@ Orders board with filters, bulk status transitions, printable order view · **in
 
 ---
 
-### Phase 6 — Subscriptions and Revenue (~2 weeks)
+### Phase 6 — Subscriptions and Revenue (~2 weeks) — COMPLETE
 
 Plans CRUD · entitlements engine + `TenantGuard` enforcement on every gated backend operation · subscription request -> top-up -> admin approval -> activation -> expiry job · commission waiver for subscribed shops · admin revenue dashboard (MRR, commission, top-ups, ARPU) · shop subscription screen with upgrade/downgrade/cancel · feature-limit enforcement with clear upgrade prompts in the UI.
 
 **Exit:** a shop upgrades, its commission drops to 0% and paid templates unlock, the ledger records the charge, and expiry restores the free tier correctly.
+
+> **Status: complete.** Every clause of the exit criterion is implemented and asserted — the
+> commission waiver, the paid-template unlock, the ledger charge and the expiry sweep are four named
+> tests in `SubscriptionLifecycleIT`.
+>
+> Five screens, on the existing shell and components: `/shop/billing`, `/admin/wallet`,
+> `/admin/revenue`, `/admin/plans`, and the upgrade prompt on the product form. Verified by driving
+> the whole D7 flow through a real browser — request, quote, pay, approve, and the numbers move.
+>
+> ```
+> backend  5,905 tests green · frontend 10/10 typecheck, console builds
+> check-phase6          5 pages, 0 console errors, 0 4xx/5xx
+> check-phase6-journey  JOURNEY OK — MRR Rs. 0.00 → 2,000.00, commission 5% → none
+> ```
+>
+> See Appendix AC (back end: the design decisions and the ten bugs the tests found) and Appendix AD
+> (front end: four screens, and the fact that D7's flow was never finishable through the UI until the
+> admin approval screen existed).
 
 ---
 
@@ -4665,4 +4683,356 @@ backend    5,810 tests, 0 failures, 0 skipped
 frontend   10/10 packages typecheck; console + customer build
 check-ui   ALL PAGES OK
 browser    orders, wishlist, addresses, login, shell — 0 console errors, 0 4xx/5xx
+```
+
+---
+
+## Appendix AC — Phase 6: subscriptions and revenue (backend)
+
+Phase 6's back end, completed and tested. The exit criterion was: *a shop upgrades, its commission
+drops to 0% and paid templates unlock, the ledger records the charge, and expiry restores the free
+tier correctly.* Those four clauses are four named tests in `SubscriptionLifecycleIT`.
+
+**Scope note:** backend only, as asked. The shop subscription screen and the admin revenue dashboard
+have no front end yet — the endpoints are live and documented, and the UI is Phase 6's remaining half.
+
+### The free tier is data, not "no rows"
+
+The decision that shapes everything else. Entitlements resolve in two layers:
+
+```
+materialised shop_entitlement rows   (copied in on activation)   ← shadows
+FREE plan's plan_entitlement rows    (the baseline)             ← falls through to
+```
+
+Representing the free tier as "no rows" — the obvious thing — means a shop that subscribed once and
+lapsed has its 25-product cap deleted along with its paid entitlements, and can then list **without
+limit**. Lapsing would make a shop *more* capable. The test asserts this directly:
+
+```java
+assertThat(entitlementService.limitOf(shop.getId(), FeatureKey.MAX_PRODUCTS)).hasValue(25L);
+```
+
+Keeping FREE as a real plan with real rows also means raising the free cap is a migration rather than
+a code change, and a fresh database cannot disagree with a migrated one about what "free" means.
+
+### Cancelling does not revoke anything before the paid period ends
+
+`cancel()` records the *intent* not to renew and leaves `status = ACTIVE`. The shop keeps its
+entitlements until `expires_at`, and only then becomes `CANCELLED`.
+
+A shop that paid for 31 days and cancels on day 3 has bought 28 more days of commission-free trading.
+Revoking on the spot makes cancellation a silent refund, and makes "try it for a month" a trap. D7's
+manual model has no way to express a pro-rata refund, so the honest version of "stop immediately" is
+not available — and pretending otherwise would be worse.
+
+`EXPIRED` and `CANCELLED` are kept apart because they answer different business questions. "How many
+shops left" is not "how many subscriptions ran out", and collapsing them would answer the first with
+the second.
+
+### The sweep is a cleanup, not the enforcement point
+
+Every read tests the grant's *own* expiry, and `findRunningByShopId` refuses to call a lapsed row
+current. If the scheduler never runs, a subscriber still loses access the moment their window closes.
+
+The asymmetry is deliberate:
+
+| failure | consequence |
+|---|---|
+| sweep never runs | stale rows; a briefly wrong `commission_plan`; self-corrects |
+| enforcement lived in the sweep | **every lapsed subscriber keeps working, indefinitely** |
+
+`shop.commission_plan` is the one thing that does drift, because `OrderService.accept` reads it
+without running a subscription query per order. It is a derived cache, so it is set only through
+`grantCommissionWaiver()` / `revokeCommissionWaiver()` rather than by assignment.
+
+### Nine bugs, and the chain that found them
+
+Every one of these was found by a test written *after* the code looked finished.
+
+1. **`subscription_id` silently never written.** `WalletService.debit` is transactional, so the entry
+   it returns is **detached** by the time the caller called `attachSubscription` on it. Every
+   subscription charge landed in the ledger with a null `subscription_id` — un-reconcilable against
+   MRR, and invisible to any test that only checked the amount. Fixed with a dedicated
+   `debitSubscriptionCharge` that sets the link *before* the insert, rather than a nullable parameter
+   on `debit` that nine other call sites would have to pass `null` to.
+
+2. **`forSubscription` called after approval.** It refuses to re-point a request that is no longer
+   `PENDING`, so **every single approval** threw "This top-up has already been APPROVED". The link
+   belonged at submit time, which is where it already happened.
+
+3. **`expire()` used to close a subscription on a plan change.** It deliberately refuses to close one
+   that has not lapsed — that guard stops a clock skew from revoking a paid period. So every mid-term
+   upgrade died on `uq_shop_subscription_one_active`, an index naming neither the cause nor the fix.
+   Added `closeForPlanChange`, which records `CANCELLED` because the shop moved rather than lapsed.
+
+4. **`Instant.plus(1, ChronoUnit.MONTHS)`** — "Unsupported unit: Months". An Instant has no calendar to
+   walk through. Month arithmetic belongs on a `LocalDate`.
+
+5. **A signed ledger sum returns negative for debit-only types.** `Money.ofMinor(-40000)` then threw
+   "amount cannot be negative", which reads as a money bug rather than a sign convention buried in a
+   query. Replaced with `sumByTypeAndDirection`, unsigned, direction explicit; the subtraction that
+   makes commission net is now a visible line in code named for it.
+
+6. **"Upgrade to Free (Rs. 0.00)"** — `upgradePathFor` offered the FREE plan, because FREE grants
+   `max_products`. A free shop hitting its cap was told to buy the plan it was already on, in the one
+   message it would read carefully. Now filtered to paid plans.
+
+7. **404s that were 500s.** `NoSuchPlanException` and `NoSuchSubscriptionException` both documented
+   "Maps to HTTP 404" from the day they were written, with no handler anywhere. Spring turned them
+   into 500s.
+
+8. **A rejected plan was still created.** `create` flushed the plan row and *then* validated its
+   entitlements, so a typo'd feature key returned 400 and left a committed plan that grants nothing.
+   Fixed by validating the whole draft **before the first insert** — correct ordering, and
+   independent of whether the controller is proxied for `@Transactional`.
+
+9. **A paying shop could not upgrade.** `request()` refused *any* second plan while one ran, so a
+   monthly subscriber who decided to go annual had to wait out the month — and would say so in a
+   support message. Split by direction: an **upgrade** (costs more) is allowed immediately; a
+   **downgrade** is refused, because switching early hands the shop a cheaper plan's entitlements for
+   a period already paid for.
+
+### One thing the tests got wrong, twice
+
+The product cap is "**at most** 25", not "fewer than 25". I asserted twice that a shop holding
+exactly 25 could add a 26th. Both times the code was right.
+
+The other correction was mine in the source, not the test: I had written that an archived product
+stops consuming the allowance. It does not — `archive()` hides a product but leaves it live and
+un-archiveable, so freeing the cap on archive would let a shop archive all 25, create 25 more,
+un-archive, and hold 50. Only `delete()` frees it, and that is refused once a product has sales.
+
+### Schema
+
+`V13__subscriptions_and_entitlements.sql`: four tables plus two columns on existing tables
+(`wallet_ledger_entry.subscription_id`, `wallet_topup_request.subscription_id` / `plan_id`).
+
+Constraints verified against the live database rather than assumed:
+
+| constraint | what it prevents |
+|---|---|
+| `subscription_plan_paid_must_expire` | a paid plan with no `duration_days` — its commission waiver could never end |
+| `subscription_plan_price_matches_period` | a priced FREE plan, which MRR would count as revenue |
+| `uq_shop_subscription_one_active` | two ACTIVE rows → two commission waivers, and which one a reader found first would be the answer |
+| `uq_shop_subscription_one_pending_per_plan` | a double-clicked button being charged twice |
+| `*_disabled_has_no_limit` | "no custom CSS, up to 3 of them" |
+
+Plus the recurring one: `BaseEntity` maps `created_at` and `updated_at`, and every new table needs
+both. V10 and V12 exist for that reason; V13's tables had it from the start.
+
+### What is deliberately absent
+
+- **No `DELETE` on plans.** Withdrawn with `is_active = false`: a cancelled subscriber's history must
+  still name its plan, and deleting cascades away the entitlements it granted.
+- **No `renewals` table.** D7 has no recurring charging, so a renewal is a new subscription.
+- **No plan version column.** Editing a live plan is *refused* while an ACTIVE subscriber holds it —
+  a stronger guarantee than a version column nobody updates. Display-only edits (name, description,
+  sort order, withdrawal) are still allowed, because refusing them would make the pricing page
+  unmaintainable exactly while it is in use.
+- **No currency column.** One country, one currency, `price_minor` in paisa like everything else.
+
+### Money
+
+The credit and the charge net to zero by design. The shop transfers to the platform; the platform
+credits the shop's wallet so it has a balance to pay its subscription from; the subscription charge
+takes it back. It looks redundant in isolation, but it means every rupee the platform takes from a
+subscriber is a ledger row with a reason, rather than a bank statement reconciled by hand against a
+table of subscriptions. The ledger is the audit trail; the bank is the settlement.
+
+The amount is **not** a request parameter — it comes from the plan, so a shop cannot ask to be
+charged one plan's price and be granted another. Stronger than validating a number it supplied.
+
+### On the revenue dashboard
+
+Every figure names its denominator, because a ratio without one means something different on every
+screen it appears on: `subscriptionArpu` (per subscriber), `platformPerTradingShop` (per verified
+shop, counting commission *and* subscriptions), `commissionPerSubscriber`.
+
+MRR **divides an annual plan by twelve**. Counting its full price as one month reports a twelvefold
+jump every January, and a dashboard that does that is a dashboard nobody trusts by the second one.
+
+Two commission figures, because there are two true ones: **realised** (what the ledger debited) and
+**waived** (what orders did *not* charge because the shop was subscribed). Reporting only realised
+makes a working subscription programme look like falling revenue — which is exactly the mistake that
+leads to a platform killing the thing retaining its shops.
+
+The waived figure is measured on **orders, not the ledger**: a waiver writes no ledger row, because no
+money moved. The frozen order figures are the only place the forgone amount is recorded.
+
+### Test discipline
+
+Every ledger assertion is a **delta**, not an absolute. The test database carries committed rows from
+seed data and earlier runs, so `assertThat(topUps).isEqualTo(500_000)` fails depending on what a
+previous run left behind — the worst property a test can have. Each test captures a baseline and
+asserts the change it caused, which is also a stronger statement.
+
+One test bug worth recording: I passed `UUID.randomUUID()` as a ledger entry's `orderId` to look
+realistic, and got
+
+```
+ERROR: insert or update on table "wallet_ledger_entry" violates foreign key constraint
+       "wallet_ledger_entry_order_id_fkey"
+  Detail: Key (order_id)=(8d8fdbf2-…) is not present in table "shop_order".
+```
+
+The foreign key was doing exactly its job. `null` is the honest value.
+
+### Status
+
+### A tenth bug, this one mine, and the regression it caused
+
+The paid-template gate was the last thing wired, and it broke **six existing theme tests**:
+
+```
+java.lang.IllegalArgumentException: 'Test' is not offered to a Pharmacy shop.
+  at ThemeService.installTemplate(ThemeService.java:222)
+```
+
+I had gated installation on `template.isOfferedTo(type, subscribed)`, which bundles three
+conditions — *published*, *tier*, *type*. Installing a **draft** template is exactly what the
+preview flow does, so the gate refused it. Split the one condition that is actually about the shop
+into `suitsShopType(type)`, and left publication to the marketplace listing and the tier to the
+entitlement.
+
+Worth recording because the failure looked like my new code being wrong when it was my new code
+understanding the wrong question. The existing tests were right.
+
+### Status
+
+```
+backend   5,901 tests, 0 failures, 0 errors, 0 skipped   (was 5,810; +91)
+
+Phase 6 backend   complete
+  6 new test classes, 91 tests:
+    SubscriptionPlanTest          16  unit     — plan validity, MRR normalisation
+    ShopSubscriptionTest          16  unit     — the state machine and the money rules
+    SubscriptionLifecycleIT       21  jdbc     — the four exit-criterion clauses
+    EntitlementEnforcementIT       7  jdbc     — product cap, paid-template install
+    RevenueServiceIT             16  jdbc     — MRR, commission, denominators
+    SubscriptionControllerIT     15  mvc      — authorisation boundaries
+
+  enforced where it matters: product cap on createDraft, tier on installTemplate
+  authorisation: admin-only at class level (D36), shop derived from the token,
+                  cross-tenant answered 404
+  no front end yet — endpoints are live and documented; the shop subscription
+  screen and the admin revenue dashboard UI are the remaining half of Phase 6
+```
+
+---
+
+## Appendix AD — Phase 6 front end: four screens, and the flow that was never finishable
+
+The back end was complete and the purchase button was on screen. What it could not do is *work*:
+D7's flow needs an admin to approve, and there was **no screen for an admin to approve anything**.
+The shop could queue a plan, transfer money, submit proof — and then nothing, forever.
+
+That is the kind of gap that typechecks, builds, and passes every unit test, because each half is
+correct on its own.
+
+### Four screens, on the existing shell and components
+
+| screen | route | what it is |
+|---|---|---|
+| Plan & billing | `/shop/billing` | current plan, features, pricing, purchase, history |
+| Wallet approvals | `/admin/wallet` | the top-up queue, approve/reject with a required reason |
+| Revenue | `/admin/revenue` | MRR, commission (realised *and* waived), ratios, trend |
+| Plans | `/admin/plans` | plan CRUD, entitlement editor, withdraw |
+
+Reused rather than rebuilt: `DataTable` with its pagination, `Card`, `Dialog`, `Badge`,
+`Checkbox`, `Input`, `Skeleton`, the console's `authorizedFetch`/`postJson`, `lib/format`'s money
+helpers, and `AppShell`'s existing nav and `ROUTE_TITLES`. Nothing new was styled from scratch.
+
+### Two approval endpoints, and picking the wrong one fails silently
+
+```
+POST /admin/wallet/topups/{id}/approve             → credits the wallet
+POST /admin/subscription-payments/{id}/approve     → credits, charges, activates, grants
+```
+
+A queue that showed only the list would send every subscription to the first. The shop's bank
+statement matches, its balance goes up, and it has **no subscription** — which reads as a successful
+payment from both sides. So `QueueItem` now carries `isSubscription`, `planCode` and `isPlanPrice`,
+and the row is routed accordingly and labelled so the difference is visible *before* the click.
+`isPlanPrice` is asserted even though `forSubscription` already guarantees it: a mismatch is the
+failure this field exists to prevent, so surfacing it in the queue beats discovering it at approval.
+
+### Four bugs, three of them found by looking at a screenshot
+
+**1. The MRR chart drew no bars.** Month labels, a correct "Peak Rs. 2,000.00" caption, and an
+empty plot area. `height: N%` resolves against the parent's height, and a `flex items-end` container
+sizes its children to *content* — so each column collapsed to the height of its own label and every
+percentage was taken against zero. Now pixels, against a named `CHART_PX`.
+
+**2. The test counted the columns, not the bars.** `[role="img"] > div` reported "6 bar(s)" on a page
+that had rendered none, and the journey script went green. It now counts `[data-testid="mrr-bar"]`
+*and* asserts the tallest bar is taller than a stub — `tallest 141px of 6`. A count of elements that
+exist is not evidence that they have size.
+
+**3. Reloading lost the payment step.** It lived in `useState`, set only after a successful request.
+A shop that requested a plan and then refreshed came back to a history table reading "Awaiting
+payment" with no amount to send and no reference to quote — the flow stuck, with no error. The step
+is now derived from `me.history`: a pending row carries `amountMinor`, `amountDisplay` and
+`reference`. **The screen survives a reload**, and that assertion is in the journey script.
+
+**4. An admin signing in landed on `/forbidden`.** The root index hardcoded `<Navigate to="/shop">`.
+The login *button* used `homeRouteFor` and got this right; Keycloak's redirect does not return to the
+button, it returns to `redirectUri` — the root. Two entry points, two answers, and the one Keycloak
+actually uses was the broken one. The index is now role-aware via a `Landing` component.
+
+Also fixed, pre-existing: `AppShell` fetched `/shop/dashboard` for **every** authenticated user, so
+every admin page logged a 403 it could do nothing about. It is now gated on `ROLE_SHOP`. A 403 in the
+console on every admin screen is background noise that hides a real 403 the day one appears.
+
+### The cancel button says what it does
+
+It reads **"Keep my plan until 8 Nov 2026"**, not "Cancel". That is exactly what happens — cancelling
+records the intent and the period already paid for runs to its end. A button labelled "Cancel" on a
+paid subscription reads as immediate revocation, which is the one thing it is not, and an owner who
+believes that will not press it.
+
+### Denominators on the revenue screen
+
+Every ratio's label states what it divides by: *subscription ARPU* is MRR ÷ paying subscribers;
+*per trading shop* is MRR **+ commission** ÷ verified shops, counting both because a free shop pays
+commission and a subscriber pays a subscription. The window is printed under the heading — "since the
+start of the current month, except MRR which is a live figure" — rather than implied.
+
+Realised and waived commission sit side by side, and waived is tinted. Reporting only realised makes
+a working subscription programme look like falling revenue.
+
+### The journey, driven through the UI
+
+`scripts/check-phase6-journey.mjs` signs in as a shop owner, requests a plan, reads the quoted
+amount and generated reference, reloads to prove the step survives, submits payment, switches to the
+admin, approves from the queue, and then re-reads the dashboard:
+
+```
+SHOP: starts on commission (5%) · amount and reference quoted · survives a reload · nothing changed yet
+ADMIN: lands on /admin not /forbidden · approves from the queue
+NUMBERS MOVE: subscribers 0 → 1 · MRR Rs. 0.00 → Rs. 2,000.00 · 6 bars, tallest 141px
+SHOP SEES IT: No commission · a running plan · history shows Running
+zero console errors, zero 4xx/5xx
+```
+
+### Scope left out, deliberately
+
+- **The MRR trend is O(shops × subscriptions)** and fine at this size; a large marketplace would want
+  it materialised. Said in the card's own description.
+- **No plan reordering drag-and-drop.** `sortOrder` is editable in the dialog; a drag handle for three
+  plans is a feature nobody asked for.
+- **No invoice for a subscription.** D7 has no recurring charging, so a renewal is a new subscription
+  rather than a charge on an old one, and an invoice format for it would be inventing a document.
+
+### Status
+
+```
+backend   5,905 tests, 0 failures, 0 errors, 0 skipped   (+4: the queue item's routing fields)
+frontend  10/10 packages typecheck; console builds
+check-ui  all pages OK (1 pre-existing storefront failure: a remote image URL
+          in the dev database pointing at vecteezy, unreachable — unrelated)
+check-phase6          all 5 pages, zero console errors, zero 4xx/5xx
+check-phase6-journey  JOURNEY OK — the whole D7 flow through the UI
+
+Phase 6   COMPLETE
 ```

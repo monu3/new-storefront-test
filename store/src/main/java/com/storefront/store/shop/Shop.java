@@ -158,6 +158,30 @@ public class Shop extends BaseEntity {
 		return commissionPlan == CommissionPlan.FREE;
 	}
 
+	/**
+	 * The shop is now commission-free, because a subscription granted
+	 * {@code remove_commission}.
+	 *
+	 * <p><b>A named method, not {@code setCommissionPlan}.</b> The flag is the fast path the
+	 * order-accept code reads while already inside an order transaction, and it exists so that path
+	 * does not have to run a subscription query per order. That makes it a derived cache of the
+	 * entitlement, and a derived cache that can be assigned from anywhere is a derived cache that
+	 * will eventually be assigned wrongly. These two methods are the only supported way to move it.
+	 */
+	public void grantCommissionWaiver() {
+		this.commissionPlan = CommissionPlan.SUBSCRIBED;
+	}
+
+	/**
+	 * The shop is back on commission — its subscription lapsed, ended or was withdrawn.
+	 *
+	 * <p>Idempotent, because the expiry sweep calls it for every shop it visits and must be
+	 * re-runnable.
+	 */
+	public void revokeCommissionWaiver() {
+		this.commissionPlan = CommissionPlan.FREE;
+	}
+
 	/** Admin approval. Publishing is what makes the shop visible in the gallery. */
 	public void verify() {
 		this.status = Status.VERIFIED;

@@ -15,6 +15,7 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import com.storefront.store.security.CurrentUser;
+import com.storefront.store.subscription.SubscriptionPlan;
 import com.storefront.store.wallet.WalletTopUpRepository;
 import com.storefront.store.wallet.WalletTopUpRequest;
 import com.storefront.store.wallet.WalletTopUpService;
@@ -50,6 +51,7 @@ public class AdminWalletController {
 	private final WalletTopUpService topUps;
 	private final WalletTopUpRepository requests;
 	private final com.storefront.store.shop.ShopRepository shops;
+	private final com.storefront.store.subscription.SubscriptionPlanRepository plans;
 	private final CurrentUser currentUser;
 
 	/**
@@ -68,8 +70,15 @@ public class AdminWalletController {
 		Pageable pageable = PageRequest.of(page, Math.min(size, MAX_PAGE_SIZE));
 		var result = topUps.queue(status, pageable);
 
+		// One query for every plan this page references, rather than one per row.
+		java.util.Map<UUID, SubscriptionPlan> plans = plansById(
+				result.getContent().stream()
+						.map(WalletTopUpRequest::getPlanId)
+						.filter(java.util.Objects::nonNull)
+						.collect(java.util.stream.Collectors.toSet()));
+
 		return new QueuePage(
-				result.getContent().stream().map(this::toItem).toList(),
+				result.getContent().stream().map(r -> toItem(r, plans)).toList(),
 				page, result.getSize(), result.getTotalElements(), result.getTotalPages(),
 				topUps.pendingCount());
 	}
@@ -111,11 +120,22 @@ public class AdminWalletController {
 	 * <p>An admin reconciling against a bank statement is looking for "who sent this", not for a
 	 * UUID, so the name is resolved here rather than left for the client to join.
 	 */
-	private QueueItem toItem(WalletTopUpRequest request) {
+	private QueueItem toItem(WalletTopUpRequest request,
+			java.util.Map<UUID, SubscriptionPlan> plans) {
 		String name = shops.findById(request.getShopId())
 				.map(com.storefront.store.shop.Shop::getName)
 				.orElse("(deleted shop)");
-		return QueueItem.from(request, name);
+		return QueueItem.from(request, name, plans);
+	}
+
+	/** Looks up the given plans in one query, skipping any that have been withdrawn and deleted. */
+	private java.util.Map<UUID, SubscriptionPlan> plansById(java.util.Set<UUID> ids) {
+		if (ids.isEmpty()) {
+			return java.util.Map.of();
+		}
+		return plans.findAllById(ids).stream()
+				.collect(java.util.stream.Collectors.toMap(
+						SubscriptionPlan::getId, java.util.function.Function.identity()));
 	}
 
 	public record DecisionRequest(@Size(max = 500) String note) {
@@ -126,6 +146,26 @@ public class AdminWalletController {
 	 *
 	 * <p>Includes the shop name, because an admin reconciling against a bank statement is looking
 	 * for "who sent this", not for a UUID.
+	 */
+	/**
+	 * A request in the queue.
+	 *
+	 * <p><b>{@code isSubscription} is the field that stops an admin approving a payment that does not
+	 * do what they think.</b> There are two approvals: a plain top-up credits the wallet, and a
+	 * subscription purchase credits, charges the plan, activates it and grants its entitlements. A UI
+	 * that showed only this list would send every subscription to the plain endpoint, which would
+	 * credit the money and never start the plan -- leaving the shop's bank statement matched, its
+	 * balance correct, and its subscription absent. That failure looks like a success from both sides.
+	 *
+	 * <p>So the client is told which kind this is, and routes accordingly.
+	 *
+	 * @param plans the plans referenced by this page's rows, indexed by id. Passed in rather than
+	 *        reached for: a record cannot have dependencies, and looking a plan up per row would be
+	 *        one query each for a queue of 25
+	 * @param isPlanPrice whether the claimed amount equals the plan's price. True by construction
+	 *        -- {@code WalletTopUpRequest.forSubscription} refuses a mismatch -- and surfaced so a
+	 *        future path that lets a shop claim a different figure is visible in the queue instead of
+	 *        being discovered at approval time
 	 */
 	public record QueueItem(
 			UUID id,
@@ -138,9 +178,18 @@ public class AdminWalletController {
 			String shopNote,
 			WalletTopUpRequest.Status status,
 			String reviewNote,
-			java.time.Instant createdAt) {
+			java.time.Instant createdAt,
+			/** Null for an ordinary top-up, which is the common case and must keep working. */
+			Boolean isSubscription,
+			String planCode,
+			Boolean isPlanPrice) {
 
-		static QueueItem from(WalletTopUpRequest r, String shopName) {
+		static QueueItem from(WalletTopUpRequest r, String shopName,
+				java.util.Map<UUID, SubscriptionPlan> plans) {
+
+			boolean subscription = r.getSubscriptionId() != null;
+			SubscriptionPlan plan = subscription ? plans.get(r.getPlanId()) : null;
+
 			return new QueueItem(
 					r.getId(),
 					r.getShopId(),
@@ -152,7 +201,11 @@ public class AdminWalletController {
 					r.getNote(),
 					r.getStatus(),
 					r.getReviewNote(),
-					r.getCreatedAt());
+					r.getCreatedAt(),
+					subscription ? Boolean.TRUE : null,
+					plan == null ? null : plan.getCode(),
+					plan == null ? null
+							: Boolean.valueOf(r.getAmountMinor() == plan.getPriceMinor()));
 		}
 	}
 

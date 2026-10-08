@@ -4,7 +4,13 @@ import { createRoot } from 'react-dom/client';
 import { Navigate, RouterProvider, createBrowserRouter } from 'react-router-dom';
 import { StrictMode, type ReactNode } from 'react';
 
-import { consoleAuthConfig, createKeycloakAdapter, type AuthAdapter } from '@store-app/auth';
+import {
+  consoleAuthConfig,
+  createKeycloakAdapter,
+  homeRouteFor,
+  resolveConsoleUser,
+  type AuthAdapter,
+} from '@store-app/auth';
 
 import '@store-app/ui/styles.css';
 import { Toaster } from '@store-app/ui';
@@ -26,6 +32,10 @@ import { ShopSettingsPage } from './pages/shop-settings';
 import { ShopDiscounts } from './pages/shop-discounts';
 import { ShopAudience } from './pages/shop-audience';
 import { ShopMediaLibrary } from './pages/shop-media';
+import { ShopSubscription } from './pages/shop-subscription';
+import { AdminRevenue } from './pages/admin-revenue';
+import { AdminPlans } from './pages/admin-plans';
+import { AdminWallet } from './pages/admin-wallet';
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -60,7 +70,7 @@ const router = createBrowserRouter([
     path: '/',
     element: <AppShell auth={auth} />,
     children: [
-      { index: true, element: <Navigate to="/shop" replace /> },
+      { index: true, element: <Landing auth={auth} /> },
       { path: 'admin', element: <RequireRole auth={auth} roles={['ROLE_ADMIN']}><AdminHome /></RequireRole> },
       {
         path: 'shop',
@@ -142,11 +152,86 @@ const router = createBrowserRouter([
           </RequireRole>
         ),
       },
+      {
+        path: 'shop/billing',
+        element: (
+          <RequireRole auth={auth} roles={['ROLE_SHOP']}>
+            <ShopSubscription auth={auth} />
+          </RequireRole>
+        ),
+      },
+      {
+        path: 'admin/revenue',
+        element: (
+          <RequireRole auth={auth} roles={['ROLE_ADMIN']}>
+            <AdminRevenue auth={auth} />
+          </RequireRole>
+        ),
+      },
+      {
+        path: 'admin/wallet',
+        element: (
+          <RequireRole auth={auth} roles={['ROLE_ADMIN']}>
+            <AdminWallet auth={auth} />
+          </RequireRole>
+        ),
+      },
+      {
+        path: 'admin/plans',
+        element: (
+          <RequireRole auth={auth} roles={['ROLE_ADMIN']}>
+            <AdminPlans auth={auth} />
+          </RequireRole>
+        ),
+      },
       { path: 'forbidden', element: <ForbiddenPage /> },
     ],
   },
   { path: '*', element: <NotFound /> },
 ]);
+
+/**
+ * Sends a signed-in visitor to the right home page.
+ *
+ * <p><b>Role-aware, which the hardcoded `{index: true}` redirect was not.</b> It always sent
+ * everyone to `/shop`, so an admin whose Keycloak redirect landed on the app root was bounced to
+ * `/forbidden` — while the login button, which uses `homeRouteFor`, sent them to `/admin`
+ * correctly. Two entry points, two different answers, and the one Keycloak actually uses was the
+ * broken one: the redirect returns to `redirectUri` (the root), not to the page the person pressed
+ * the button on.
+ *
+ * <p>It has to wait for the session, for the same reason `RequireRole` does: deciding before
+ * `init()` resolves would send a signed-in admin to `/login` on every hard refresh.
+ */
+function Landing({ auth: adapter }: { auth: AuthAdapter }) {
+  const [ready, setReady] = React.useState(false);
+  const [session, setSession] = React.useState(() => adapter.getSession());
+
+  React.useEffect(() => {
+    let cancelled = false;
+    void adapter
+      .init()
+      .then(() => {
+        if (cancelled) return;
+        setSession(adapter.getSession());
+        setReady(true);
+      })
+      .catch(() => {
+        // Fail to /login rather than to a role guess built on nothing.
+        if (cancelled) return;
+        setSession({ authenticated: false, roles: [] });
+        setReady(true);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [adapter]);
+
+  if (!ready) {
+    return <div className="p-8 text-sm text-muted-foreground">Checking your access…</div>;
+  }
+  return <Navigate to={homeRouteFor(resolveConsoleUser(session))} replace />;
+}
 
 /**
  * Blocks a route until the role is known, then redirects if it is wrong.

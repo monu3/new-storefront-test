@@ -95,6 +95,54 @@ public class WalletTopUpRequest extends BaseEntity {
 	@Column(name = "ledger_entry_id")
 	private UUID ledgerEntryId;
 
+	/**
+	 * The subscription this transfer is paying for, and the plan it was requested against.
+	 *
+	 * <p>Null on an ordinary wallet top-up, which is the common case and must keep working exactly
+	 * as it did before subscriptions existed.
+	 *
+	 * <p>Both columns rather than one: {@code plan_id} records what the shop asked to buy (which is
+	 * what the price was quoted against, and what a rejected request was rejected <em>for</em>), and
+	 * {@code subscription_id} is what the approval actually settles. Keeping them apart means an
+	 * admin can see what was requested even after the subscription has closed.
+	 */
+	@Column(name = "subscription_id")
+	private UUID subscriptionId;
+
+	/** The plan this top-up was submitted against. See {@link #subscriptionId}. */
+	@Column(name = "plan_id")
+	private UUID planId;
+
+	/**
+	 * Marks this request as paying for a subscription.
+	 *
+	 * <p>A named method rather than a package setter because the subscription package is not the
+	 * wallet package, and this is the one relationship that decides whether an admin's approval
+	 * starts a subscription or only credits a balance. It is checked once, here, that the amount
+	 * matches the plan — a shop cannot ask to be charged one plan's price and be granted another.
+	 *
+	 * @param priceMinor the plan's price, checked against {@link #amountMinor}
+	 * @throws IllegalArgumentException when the amount does not match the plan being bought
+	 */
+	public void forSubscription(UUID subscriptionId, UUID planId, long priceMinor) {
+		if (status != Status.PENDING) {
+			// Once reviewed the amount is a matter of record. Re-pointing a settled request at
+			// another plan would rewrite what the admin approved.
+			throw new IllegalStateException(
+					"This top-up has already been " + status + " and cannot be re-pointed.");
+		}
+		if (amountMinor != priceMinor) {
+			// Refused here rather than at approval, so the shop finds out immediately instead of
+			// after a bank transfer and an admin's review. The admin should never be handed a
+			// request whose amount and plan disagree and be asked to spot it.
+			throw new IllegalArgumentException(
+					"You are paying " + amountMinor + " for a plan that costs " + priceMinor
+							+ ". Enter the plan's exact price.");
+		}
+		this.subscriptionId = subscriptionId;
+		this.planId = planId;
+	}
+
 	public WalletTopUpRequest(UUID shopId, long amountMinor, Method method, String reference,
 			UUID proofMediaId, String note) {
 

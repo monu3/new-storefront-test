@@ -48,6 +48,7 @@ public class ThemeService {
 	private final ShopRepository shops;
 	private final MediaAssetRepository media;
 	private final ThemeValidator validator;
+	private final com.storefront.store.subscription.EntitlementService entitlements;
 	private final ObjectMapper json;
 
 	// ------------------------------------------------------------------ templates
@@ -197,9 +198,33 @@ public class ThemeService {
 	 * <p>The config is <b>copied</b>. A shop's storefront must not restyle itself because an admin
 	 * edited a template, and must not break because a template was deleted — which is why
 	 * {@code shop_theme.template_id} is provenance and {@code ON DELETE SET NULL}.
+	 *
+	 * <p><b>The tier is enforced here, not only in the marketplace listing.</b>
+	 * {@link #marketplaceFor} hides paid templates from free shops, which is the honest UI — but a
+	 * hidden link is not a control, and the install endpoint accepts a template id. A shop on the
+	 * free tier that posted the id of a SUBSCRIBED template would otherwise install it, and the whole
+	 * tier would be a filter on one screen rather than a thing the server enforces.
 	 */
 	@Transactional
 	public ShopTheme installTemplate(Shop shop, ThemeTemplate template, UUID actorId) {
+
+		if (template.getPriceTier() == ThemeTemplate.PriceTier.SUBSCRIBED) {
+			entitlements.require(shop.getId(),
+					com.storefront.store.subscription.FeatureKey.USE_PAID_TEMPLATES);
+		}
+
+		if (!template.suitsShopType(shop.getType())) {
+			// The shop-type check, which marketplaceFor also applies but which is not part of the
+			// tier rule above. A GROCERY shop cannot install a PHARMACY-only template whatever it
+			// pays for.
+			//
+			// <p>`suitsShopType`, not `isOfferedTo`: the latter also requires the template to be
+			// published, and installing a draft is exactly what the preview flow does.
+			throw new IllegalArgumentException(
+					"'" + template.getName() + "' is not offered to a "
+							+ shop.getType().label() + " shop.");
+		}
+
 		String config = validator.validateAndNormalise(template.getConfig());
 
 		ShopTheme theme = shopThemes.saveAndFlush(new ShopTheme(shop.getId(),

@@ -127,6 +127,57 @@ public class WalletService {
 	}
 
 	/**
+	 * Debits a subscription charge, linking it to the subscription that caused it.
+	 *
+	 * <p><b>A separate method rather than a nullable argument on {@link #debit}.</b> The link has to
+	 * be set <em>before</em> the row is written: {@link #debit} is itself transactional, so the entry
+	 * it returns is detached by the time its caller could set the field, and a mutation on a
+	 * detached entity is discarded without complaint. That is not a hypothetical -- it is exactly what
+	 * happened, and the resulting ledger had null subscription ids on every subscription charge.
+	 *
+	 * <p>Adding a parameter to {@code debit} instead would mean nine other call sites passing null,
+	 * one of which would eventually pass the wrong subscription.
+	 */
+	@Transactional(isolation = Isolation.SERIALIZABLE)
+	public WalletLedgerEntry debitSubscriptionCharge(UUID shopId, long amountMinor,
+			String idempotencyKey, String description, UUID subscriptionId, UUID actorUserId) {
+
+		if (subscriptionId == null) {
+			// A charge with no plan behind it cannot be reconciled against MRR, so it must not be
+			// writable at all.
+			throw new IllegalArgumentException(
+					"A subscription charge must name the subscription it is paying for.");
+		}
+
+		Optional<WalletLedgerEntry> existing = ledgerRepository.findByIdempotencyKey(idempotencyKey);
+		if (existing.isPresent()) {
+			return existing.get();
+		}
+		if (amountMinor <= 0) {
+			throw new IllegalArgumentException("Charge amount must be positive: " + amountMinor);
+		}
+
+		balanceOf(shopId);
+		long current = lockedBalance(shopId);
+		long newBalance = current - amountMinor;
+
+		WalletLedgerEntry entry = WalletLedgerEntry.builder()
+				.shopId(shopId)
+				.entryType(EntryType.SUBSCRIPTION_CHARGE)
+				.direction(Direction.DEBIT)
+				.amountMinor(amountMinor)
+				.balanceAfterMinor(newBalance)
+				.idempotencyKey(idempotencyKey)
+				.description(description)
+				.actorUserId(actorUserId)
+				.build();
+
+		entry.attachSubscription(subscriptionId);
+
+		return persist(shopId, entry);
+	}
+
+	/**
 	 * Credits back a previous debit, for a cancellation or refund.
 	 *
 	 * <p>Idempotent on the original debit's key with a {@code "reversal:"} prefix, so cancelling

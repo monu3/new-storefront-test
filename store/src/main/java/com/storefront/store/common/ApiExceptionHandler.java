@@ -228,6 +228,163 @@ public class ApiExceptionHandler {
 	}
 
 	/**
+	 * The shop has not bought the feature it just tried to use.
+	 *
+	 * <p><b>403, with the upgrade path in the body.</b> A bare 403 is a wall; this carries what
+	 * would make it a yes — the feature, the numbers where there are limits, and the plan to buy.
+	 * The shop owner is a customer of this platform paying a monthly subscription to somebody else,
+	 * and the difference between "no" and "here is what would let you" is the entire feature.
+	 *
+	 * <p>Distinct from a {@code TenantGuard} 403, which means "this is not your shop" and offers no
+	 * purchase that would help. Different problem, different code, different message.
+	 */
+	@ExceptionHandler(com.storefront.store.subscription.EntitlementService
+			.EntitlementDeniedException.class)
+	public ProblemDetail handleEntitlementDenied(
+			com.storefront.store.subscription.EntitlementService.EntitlementDeniedException ex,
+			HttpServletRequest request) {
+
+		var problem = ProblemDetail.forStatusAndDetail(HttpStatus.FORBIDDEN, ex.getMessage());
+		problem.setTitle("This is not in your plan");
+		problem.setProperty("code", "ENTITLEMENT_DENIED");
+		problem.setProperty("feature", ex.feature().key());
+
+		// Null when no active plan grants it. Present-and-null is meaningful: the UI must not offer
+		// an upgrade button that leads to a pricing page where nothing can be bought.
+		problem.setProperty("upgradeTo", ex.upgradeToCode());
+
+		if (ex.limit() != null) {
+			problem.setProperty("currentCount", ex.limit().currentCount());
+			problem.setProperty("adding", ex.limit().adding());
+			problem.setProperty("limit", ex.limit().limit());
+		}
+
+		problem.setInstance(java.net.URI.create(request.getRequestURI()));
+		return problem;
+	}
+
+	/** A subscription purchase an admin rejected because the transfer did not cover the plan. */
+	@ExceptionHandler(com.storefront.store.subscription.SubscriptionPaymentService
+			.InsufficientFundsException.class)
+	public ProblemDetail handleSubscriptionShortfall(
+			com.storefront.store.subscription.SubscriptionPaymentService.InsufficientFundsException ex,
+			HttpServletRequest request) {
+
+		var problem = ProblemDetail.forStatusAndDetail(HttpStatus.CONFLICT, ex.getMessage());
+		problem.setTitle("Transfer does not cover the plan");
+		problem.setProperty("code", "SUBSCRIPTION_SHORTFALL");
+		problem.setProperty("availableMinor", ex.availableMinor());
+		problem.setProperty("requiredMinor", ex.requiredMinor());
+		problem.setProperty("shortfallMinor", ex.shortfallMinor());
+		problem.setInstance(java.net.URI.create(request.getRequestURI()));
+		return problem;
+	}
+
+	/**
+	 * A plan that does not exist.
+	 *
+	 * <p>404. The exception's own Javadoc promised this from the day it was written; without the
+	 * handler Spring turns it into a 500, and an admin who mistypes an id gets "internal server
+	 * error" where the honest answer is "no such plan".
+	 */
+	@ExceptionHandler(com.storefront.store.subscription.SubscriptionService
+			.NoSuchPlanException.class)
+	public ProblemDetail handleNoSuchPlan(
+			com.storefront.store.subscription.SubscriptionService.NoSuchPlanException ex,
+			HttpServletRequest request) {
+
+		var problem = ProblemDetail.forStatusAndDetail(HttpStatus.NOT_FOUND, ex.getMessage());
+		problem.setTitle("No such plan");
+		problem.setProperty("code", "NO_SUCH_PLAN");
+		problem.setInstance(java.net.URI.create(request.getRequestURI()));
+		return problem;
+	}
+
+	/**
+	 * A subscription that does not exist, or is not the caller's.
+	 *
+	 * <p>404 for both, deliberately: a 403 would confirm the id exists, and confirming that is the
+	 * only thing an enumeration attempt needs. The two cases are indistinguishable to the caller on
+	 * purpose.
+	 */
+	@ExceptionHandler(com.storefront.store.subscription.SubscriptionService
+			.NoSuchSubscriptionException.class)
+	public ProblemDetail handleNoSuchSubscription(
+			com.storefront.store.subscription.SubscriptionService.NoSuchSubscriptionException ex,
+			HttpServletRequest request) {
+
+		var problem = ProblemDetail.forStatusAndDetail(HttpStatus.NOT_FOUND, ex.getMessage());
+		problem.setTitle("No such subscription");
+		problem.setProperty("code", "NO_SUCH_SUBSCRIPTION");
+		problem.setInstance(java.net.URI.create(request.getRequestURI()));
+		return problem;
+	}
+
+	/** An admin approving an ordinary wallet top-up through the subscription screen. */
+	@ExceptionHandler(com.storefront.store.subscription.SubscriptionPaymentService
+			.TopUpNotForSubscriptionException.class)
+	public ProblemDetail handleTopUpNotForSubscription(
+			com.storefront.store.subscription.SubscriptionPaymentService
+					.TopUpNotForSubscriptionException ex,
+			HttpServletRequest request) {
+
+		var problem = ProblemDetail.forStatusAndDetail(HttpStatus.CONFLICT, ex.getMessage());
+		problem.setTitle("Not a subscription purchase");
+		problem.setProperty("code", "NOT_A_SUBSCRIPTION_TOPUP");
+		problem.setInstance(java.net.URI.create(request.getRequestURI()));
+		return problem;
+	}
+
+	/**
+	 * A shop owner trying to buy or read a subscription without owning a shop yet.
+	 *
+	 * <p>403 with the reason, because "complete shop signup first" is actionable and a bare 403 is
+	 * not.
+	 */
+	@ExceptionHandler(org.springframework.security.access.AccessDeniedException.class)
+	public ProblemDetail handleAccessDenied(
+			org.springframework.security.access.AccessDeniedException ex,
+			HttpServletRequest request) {
+
+		// Only a TenantGuard denial carries a message worth showing. A bare authorisation failure
+		// has nothing useful in it, so the status is kept and the title is generic.
+		boolean explained = ex.getMessage() != null && !ex.getMessage().isBlank();
+
+		var problem = ProblemDetail.forStatusAndDetail(HttpStatus.FORBIDDEN,
+				explained ? ex.getMessage() : "You do not have access to that.");
+		problem.setTitle(explained ? "You cannot do that yet" : "Forbidden");
+		problem.setProperty("code", explained ? "SHOP_NOT_READY" : "FORBIDDEN");
+		problem.setInstance(java.net.URI.create(request.getRequestURI()));
+		return problem;
+	}
+
+	/** A plan with live subscribers, whose terms cannot be changed. */
+	@ExceptionHandler(com.storefront.store.subscription.AdminPlanController.PlanInUseException.class)
+	public ProblemDetail handlePlanInUse(
+			com.storefront.store.subscription.AdminPlanController.PlanInUseException ex,
+			HttpServletRequest request) {
+
+		var problem = ProblemDetail.forStatusAndDetail(HttpStatus.CONFLICT, ex.getMessage());
+		problem.setTitle("That plan is in use");
+		problem.setProperty("code", "PLAN_IN_USE");
+		problem.setInstance(java.net.URI.create(request.getRequestURI()));
+		return problem;
+	}
+
+	/** A feature key that is not one this build knows. */
+	@ExceptionHandler(com.storefront.store.subscription.AdminPlanController.UnknownFeatureException.class)
+	public ProblemDetail handleUnknownFeature(
+			com.storefront.store.subscription.AdminPlanController.UnknownFeatureException ex,
+			HttpServletRequest request) {
+
+		var problem = ProblemDetail.forStatusAndDetail(HttpStatus.BAD_REQUEST, ex.getMessage());
+		problem.setTitle("Unknown feature");
+		problem.setProperty("code", "UNKNOWN_FEATURE");
+		problem.setInstance(java.net.URI.create(request.getRequestURI()));
+		return problem;
+	}
+
+	/**
 	 * A payment method the shop enabled without configuring it.
 	 *
 	 * <p>400 rather than 500: the customer chose an option the shop offered, and the honest

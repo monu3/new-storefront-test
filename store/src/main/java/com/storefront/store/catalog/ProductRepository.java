@@ -53,6 +53,23 @@ public interface ProductRepository extends JpaRepository<Product, UUID>, PublicS
 
 	long countByShopIdAndStatusAndDeletedAtIsNull(UUID shopId, Product.Status status);
 
+	/**
+	 * Every product a shop has, in any status, that is not soft-deleted.
+	 *
+	 * <p>Exists for the subscription product cap. Two decisions in it, both of which are the
+	 * difference between a limit and a suggestion:
+	 *
+	 * <p><b>Drafts count.</b> Capping only published products means a shop on the free tier creates
+	 * unlimited drafts and the limit never arrives, because only published rows are checked.
+	 *
+	 * <p><b>Archived products count too.</b> {@code archive()} hides a product from the storefront
+	 * but leaves it live and referenced by order history, and it can be un-archived. If archiving
+	 * freed the allowance, a shop could archive all 25, create 25 more, un-archive, and hold 50 --
+	 * so the cap would bound nothing at all. Only {@link Product#delete()} frees the allowance, and
+	 * that is refused once a product has sales, which is the point.
+	 */
+	long countByShopIdAndDeletedAtIsNull(UUID shopId);
+
 	long countByProductCategoryAndStatusAndDeletedAtIsNull(ProductCategory category,
 			Product.Status status);
 

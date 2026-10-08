@@ -150,6 +150,23 @@ public class ThemeTemplate extends BaseEntity {
 		if (priceTier == PriceTier.SUBSCRIBED && !subscribed) {
 			return false;
 		}
+		return suitsShopType(shopType);
+	}
+
+	/**
+	 * Whether this template is for a given shop's vertical, ignoring publication and tier.
+	 *
+	 * <p><b>Separate from {@link #isOfferedTo} because that one bundles three conditions.</b> The
+	 * install endpoint legitimately installs a template that is still a draft -- that is what a
+	 * draft is for, and an admin previewing before publishing is the ordinary case -- so gating
+	 * installation on {@code isOfferedTo} refused six existing tests and would have refused the
+	 * preview flow with them.
+	 *
+	 * <p>What installation must check is the one thing that is about the *shop*: a GROCERY shop may
+	 * not install a PHARMACY-only template whatever it pays for. Publication and tier are checked
+	 * separately, and the tier is checked by the entitlement rather than by this method.
+	 */
+	public boolean suitsShopType(ShopType shopType) {
 		// A null shop_type suits every vertical; a tagged one must match.
 		return this.shopType == null || this.shopType.equals(shopType.name());
 	}

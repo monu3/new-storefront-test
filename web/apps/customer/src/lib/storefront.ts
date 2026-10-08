@@ -61,6 +61,14 @@ export interface ProductDetail extends ProductCard {
   related: ProductCard[];
 }
 
+export interface SearchShop {
+  id: string;
+  slug: string;
+  name: string;
+  shopType: string;
+  matches: number;
+}
+
 export interface SearchResult {
   shops: Array<{
     slug: string;
@@ -70,6 +78,11 @@ export interface SearchResult {
     matchCount?: number;
   }>;
   products: Array<ProductCard & { shopSlug: string; shopName: string }>;
+}
+
+export interface SearchShopsResult {
+  query: string;
+  shops: SearchShop[];
 }
 
 /** Minor units (paisa) formatted as rupees. Every price on the storefront goes through this. */
@@ -140,6 +153,14 @@ export async function getProduct(shopSlug: string, productSlug: string): Promise
 export async function search(query: string): Promise<SearchResult | null> {
   return serverGet<SearchResult>(
     `/api/v1/p/search?q=${encodeURIComponent(query)}`,
+    30,
+    ['search'],
+  );
+}
+
+export async function searchShops(query: string): Promise<SearchShopsResult | null> {
+  return serverGet<SearchShopsResult>(
+    `/api/v1/p/search/shops?q=${encodeURIComponent(query)}`,
     30,
     ['search'],
   );

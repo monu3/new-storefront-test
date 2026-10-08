@@ -167,4 +167,29 @@ public interface ShopOrderRepository extends JpaRepository<ShopOrder, UUID> {
 			""")
 	Page<ShopOrder> findWithCommission(@Param("statuses") List<ShopOrder.Status> statuses,
 			Pageable pageable);
+
+	/**
+	 * Commission that orders did <em>not</em> charge because their shop was subscribed, since a
+	 * moment.
+	 *
+	 * <p>Read from the order's frozen {@code commission_waived} flag rather than from the ledger,
+	 * and the reason is the point of it: a waiver leaves no ledger row at all, because no money
+	 * moved. The frozen order figures are the only place the forgone amount is written down, so
+	 * this is the one query that can answer "what did subscriptions cost us in commission?".
+	 *
+	 * <p>Counts every accepted order regardless of date, so it can be compared against realised
+	 * commission for the same window. A reversal does not clear a waiver -- the commission was
+	 * never taken, so there is nothing to reverse.
+	 */
+	@Query("""
+			SELECT COALESCE(SUM(o.commissionMinor), 0)
+			FROM ShopOrder o
+			WHERE o.commissionWaived = true
+			  AND o.placedAt >= :since
+			""")
+	long sumWaivedCommissionMinor(@Param("since") java.time.Instant since);
+
+	/** Orders that were accepted since a moment. The denominator for a per-order figure. */
+	long countByStatusAndPlacedAtAfter(ShopOrder.Status status, java.time.Instant after);
+
 }

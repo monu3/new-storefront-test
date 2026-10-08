@@ -91,6 +91,38 @@ public class WalletLedgerEntry {
 	@Column(name = "payment_transaction_id")
 	private UUID paymentTransactionId;
 
+	/**
+	 * The subscription this entry paid for, on a {@link EntryType#SUBSCRIPTION_CHARGE}.
+	 *
+	 * <p>Null for every other entry type, which is why the column is nullable: most entries are not
+	 * subscription-related, and requiring one would mean inventing a subscription for a commission
+	 * debit.
+	 *
+	 * <p>Set after the row is written rather than passed to {@code debit}, because a debit that
+	 * takes a subscription argument forces all nine other call sites to pass null and invites one of
+	 * them to pass the wrong subscription. The charge and the subscription are created in the same
+	 * transaction, so linking afterwards is safe — and if the transaction rolls back, so does the
+	 * link.
+	 */
+	@Column(name = "subscription_id")
+	private UUID subscriptionId;
+
+	/**
+	 * Records which subscription this charge paid for.
+	 *
+	 * <p>Named rather than a setter because this is only ever true for a subscription charge, and a
+	 * plain setter would let a commission debit point at a subscription. Refuses the wrong entry
+	 * type loudly, since a charge with no plan behind it cannot be reconciled against MRR.
+	 */
+	public void attachSubscription(UUID subscription) {
+		if (entryType != EntryType.SUBSCRIPTION_CHARGE) {
+			throw new IllegalStateException(
+					"A " + entryType + " is not a subscription charge, so it has no subscription "
+							+ "to point at. Only SUBSCRIPTION_CHARGE rows carry one.");
+		}
+		this.subscriptionId = subscription;
+	}
+
 	/** Set on a reversal, pointing at the debit being reversed. */
 	@Column(name = "reversal_of")
 	private UUID reversalOf;

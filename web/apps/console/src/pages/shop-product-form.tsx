@@ -22,6 +22,11 @@ import {
 } from '@store-app/ui';
 import { cn } from '@store-app/ui';
 
+import type { EntitlementDenial } from '@store-app/api-client';
+
+import { UpgradePrompt } from '../components/upgrade-prompt';
+import { readEntitlementDenial } from '../lib/entitlements';
+
 /**
  * Create or edit a product (Phase 4).
  *
@@ -82,6 +87,9 @@ export function ShopProductForm({ auth }: { auth: AuthAdapter }) {
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  // A refused plan limit, kept apart from `problems`: it is not a field error, and putting
+  // "upgrade to Pro" under the product-name field is how a shop concludes it mistyped.
+  const [denial, setDenial] = useState<EntitlementDenial | null>(null);
 
   const { data: meta } = useQuery({
     queryKey: ['shop-meta'],
@@ -136,6 +144,13 @@ export function ShopProductForm({ auth }: { auth: AuthAdapter }) {
       } else {
         const response = await postJson(auth, '/api/v1/shop/products', body);
         if (!response.ok) {
+          // Checked before the generic handler, because the two need different rendering: one is a
+          // field the owner can fix, the other is a purchase decision.
+          const refused = await readEntitlementDenial(response);
+          if (refused) {
+            setDenial(refused);
+            return;
+          }
           setProblems([{ step, field: 'name', message: await readProblem(response) }]);
           return;
         }
@@ -245,6 +260,16 @@ export function ShopProductForm({ auth }: { auth: AuthAdapter }) {
                 </p>
 
                 <div className="mt-6 space-y-5">
+                  {/*
+                    * The upgrade prompt sits above the form, not beside the name field.
+                    *
+                    * <p>An entitlement refusal is not a validation error: nothing about this form
+                    * needs correcting. Putting it under the name input reads as "you typed it
+                    * wrong", and an owner who believes that will retype it three times before
+                    * reading the message again.
+                    */}
+                  {denial ? <UpgradePrompt denial={denial} /> : null}
+
                   <Field label="Product Name" htmlFor="product-name" required error={errorFor(problems, 'name')}>
                     <Input
                       id="product-name"
