@@ -12,12 +12,16 @@ import {
   Image,
   Landmark,
   LayoutGrid,
+  LifeBuoy,
   LogOut,
+  PackageX,
   Percent,
+  ScrollText,
   Settings,
   ShoppingBag,
   Sparkles,
   Store,
+  Terminal,
   TrendingUp,
   Users,
 } from 'lucide-react';
@@ -399,10 +403,14 @@ const ROUTE_TITLES: Array<{ path: string; label: string }> = [
   { path: '/shop/discounts', label: 'Discounts' },
   { path: '/shop/media', label: 'Media Library' },
   { path: '/shop/audience', label: 'Audience' },
+  { path: '/shop/returns', label: 'Returns' },
   { path: '/shop/billing', label: 'Plan & billing' },
   { path: '/admin/wallet', label: 'Wallet approvals' },
   { path: '/admin/revenue', label: 'Revenue' },
   { path: '/admin/plans', label: 'Plans' },
+  { path: '/admin/audit', label: 'Audit log' },
+  { path: '/admin/explorer', label: 'Data explorer' },
+  { path: '/admin/support', label: 'Support' },
 ];
 
 // -------------------------------------------------------------------------- nav
@@ -418,6 +426,7 @@ const SHOP_NAV: NavItem[] = [
   { to: '/shop/orders', label: 'Orders', icon: ShoppingBag },
   { to: '/shop/products', label: 'Products', icon: LayoutGrid },
   { to: '/shop/audience', label: 'Audience', icon: Users },
+  { to: '/shop/returns', label: 'Returns', icon: PackageX },
   { to: '/shop/discounts', label: 'Discounts', icon: Percent },
   { to: '/shop/media', label: 'Media', icon: Image },
   { to: '/shop/theme', label: 'Appearance', icon: Sparkles },
@@ -425,12 +434,17 @@ const SHOP_NAV: NavItem[] = [
   { to: '/shop/settings', label: 'Settings', icon: Settings },
 ];
 
+// Ordered by how often an operator reaches for each one, not alphabetically: the dashboard and the
+// queues come first, and the tools an administrator opens when something has gone wrong come last.
 const ADMIN_NAV: NavItem[] = [
   { to: '/admin', label: 'Dashboard', icon: Gauge },
   { to: '/admin/wallet', label: 'Wallet approvals', icon: Landmark },
-  { to: '/admin/revenue', label: 'Revenue', icon: TrendingUp },
-  { to: '/admin/plans', label: 'Plans', icon: CreditCard },
   { to: '/admin/shops', label: 'Shops', icon: Store },
+  { to: '/admin/users', label: 'People', icon: Users },
+  { to: '/admin/revenue', label: 'Revenue', icon: TrendingUp },
   { to: '/admin/reports', label: 'Reports', icon: LayoutGrid },
-  { to: '/admin/settings', label: 'Settings', icon: Settings },
+  { to: '/admin/plans', label: 'Plans', icon: CreditCard },
+  { to: '/admin/support', label: 'Support', icon: LifeBuoy },
+  { to: '/admin/audit', label: 'Audit log', icon: ScrollText },
+  { to: '/admin/explorer', label: 'Data explorer', icon: Terminal },
 ];

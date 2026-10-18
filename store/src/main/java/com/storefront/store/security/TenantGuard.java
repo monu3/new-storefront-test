@@ -72,6 +72,32 @@ public class TenantGuard {
 	}
 
 	/** True when the caller is a platform admin, who is not owned by any shop. */
+	/**
+	 * The signed-in account's id, for recording who did something.
+	 *
+	 * <p>Deliberately separate from {@link #requireOwnedShop()}: that one is a <em>shop</em> id and
+	 * this one is an <em>account</em> id, and passing one where the other belongs produces an empty
+	 * result rather than an error. An audit trail and a tenant filter are exactly the two places
+	 * that distinction matters most, so it is worth a method rather than a comment.
+	 */
+	public UUID currentUserId() {
+		AppUser caller = currentUser.optionalUser();
+		if (caller == null) {
+			throw new IllegalStateException("No signed-in account on this request");
+		}
+		return caller.getId();
+	}
+
+	/**
+	 * The signed-in customer's account id, for the customer-facing endpoints.
+	 *
+	 * <p>Same id as {@link #currentUserId()}; named separately so a call site reads as what it
+	 * means. A customer endpoint that reached for a shop id would be a different bug entirely.
+	 */
+	public UUID requireCustomerId() {
+		return currentUserId();
+	}
+
 	public boolean isAdmin() {
 		return currentUser.hasRole("ROLE_ADMIN");
 	}

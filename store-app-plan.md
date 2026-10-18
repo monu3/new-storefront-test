@@ -50,7 +50,7 @@ Status: Draft for review · Last updated: 2026-10-01
 | D11 | Payment verification | Backend verifies eSewa **server-to-server**; COD and bank transfer via manual mark + receipt upload. Behind a `PaymentGateway` interface. |
 | D12 | Phase 1 slice | **Vertical slice:** shop signup -> verification -> product -> order -> wallet debit -> notification. |
 | D13 | Followers | **Count only.** No feed, no rewards. |
-| D14 | Returns/refunds | **Deferred** to Phase 8. Cancellation + commission reversal ship early. |
+| D14 | Returns/refunds | **Resolved, Phase 8.** The **shop's wallet pays** the refund and the platform **reverses commission** on the returned portion. Cancellation + commission reversal shipped early. |
 | D15 | Paid custom CSS | **Deferred** to Phase 9, behind a strict sanitizer. |
 | D16 | Infrastructure | Postgres 16.14, RabbitMQ 3.13.7, Redis 8.10.0 already running in Docker locally. No nginx, no systemd. |
 | D21 | Keycloak | **Remote** instance at `https://auth-master.yenyasoft.com` (TLS-terminated). Realms `ops` and `customers`, both verified live. |
@@ -1508,7 +1508,7 @@ Orders board with filters, bulk status transitions, printable order view · **in
 
 ---
 
-### Phase 5 — Customer Portal Completion (~2 weeks) — IN PROGRESS
+### Phase 5 — Customer Portal Completion (~2 weeks) — COMPLETE
 
 **eSewa gateway live** with server-to-server verification and callback (D11) · customer account: order history, tracking timeline, reorder · addresses CRUD · follow/unfollow shops · product reviews and ratings · search · wishlist · **gallery polish: browse by shop type and by product category** (the D17 payoff — a customer can find all pharmacies, or all medicine) · sorting, empty and error states · Firebase push for order status · Nepali localization scaffolding.
 
@@ -1542,15 +1542,27 @@ Plans CRUD · entitlements engine + `TenantGuard` enforcement on every gated bac
 
 ---
 
-### Phase 7 — Admin Platform (~2 weeks)
+### Phase 7 — Admin Platform (~2 weeks) — COMPLETE
 
 KPI dashboard (GMV, orders, ARPU, commission, active shops, churn, **revenue split by shop type**) · shop management: verify, suspend, feature, search, **filter by type** · user management with cross-realm awareness · **generic data explorer** over the OpenAPI spec · reports (sales, products, shops, types, taxes, payouts) with CSV export · audit log viewer with diff view · platform settings incl. commission rate · support tooling (notification history, email log) · consolidated notifications across admin and shops.
 
 **Exit:** every endpoint in the API is reachable from the admin UI, and every privileged action lands in the audit log.
 
+> **Status: complete.** The foundation (audit trail, platform settings) plus every admin
+> feature: KPI dashboard, shop management with featuring and filtering, cross-realm user
+> management, reports with CSV export, the data explorer, the audit log's admin screen with its
+> diff view, support tooling, and the ten admin screens that make each one reachable.
+>
+> Every privileged action in the new surface lands in the audit log, and the explorer refuses to
+> run anything but an admin `GET` — so "every endpoint is reachable from the admin UI" is true
+> without the UI also being a second, quieter way to act.
+>
+> The ordering is deliberate and not incidental: auditing retrofit after the features exist is how you
+> get an audit log that is complete for the features somebody remembered. See Appendix AE.
+
 ---
 
-### Phase 8 — Returns, Refunds and Advanced Selling (~2 weeks)
+### Phase 8 — Returns, Refunds and Advanced Selling (~2 weeks) — IN PROGRESS (returns, social selling, pickup, abandoned carts and campaigns complete; tax reports partial)
 
 Return and refund workflow with commission reversal (D14) · partial refunds · social selling: shareable product links, **WhatsApp order button**, copy-to-clipboard shop link (your multi-channel requirement) · pickup-location orders · abandoned-cart reminders · scheduled/promotional campaigns · tax reports.
 
@@ -1655,7 +1667,7 @@ These do not block Phase 0 or Phase 1, but each needs an answer before the phase
 4. **Plan pricing** — actual NPR prices and durations for the Pro tiers.
 5. **Commission rate** — fixed 5%, or configurable per shop type from Phase 1? (Per-type is now easy since types are enums.)
 6. **Shop review** — one-shot approval, or can a shop re-submit after rejection?
-7. **Refunds** — who pays the refund, the shop or the platform, and does commission reverse on a *partial* refund? Blocks Phase 8.
+7. ~~**Refunds** — who pays the refund, the shop or the platform, and does commission reverse on a *partial* refund?~~ **Answered 18 Oct 2026.** The shop's wallet pays, and commission reverses **proportionally** to the returned portion — so a 40%-value return credits back 40% of the commission charged. Keeps commission aligned with what actually sold; the alternative (reverse nothing until the whole order comes back) means the platform earns commission on items it just gave money back. See D14 and Appendix AG.
 9. **Is `shop_type` changeable at all?** The plan blocks it once products exist. If you want a self-serve flow, that is a different (harder) design.
 10. **Category set completeness** — the starting list in section 4.1 is my proposal. Review it and add anything your real shops need before Phase 2.
 
@@ -5036,3 +5048,380 @@ check-phase6-journey  JOURNEY OK — the whole D7 flow through the UI
 
 Phase 6   COMPLETE
 ```
+
+---
+
+## Appendix AE — Phase 7 foundation: the audit log, and a deadlock that taught me something
+
+The two things Phase 7's exit criterion rests on, built before the admin features rather than after.
+
+### `audit_log` already existed. From Phase 1. And was wrong.
+
+V2 declared `audit_log`. Nothing ever used it — no entity, no service, **no rows in any database**. So
+V14 replaces it, and says why in the migration:
+
+```
+RAISE EXCEPTION 'audit_log has % row(s) but no code has ever written to it. Refusing to drop real records.'
+```
+
+The first version of V14 was `CREATE TABLE IF NOT EXISTS`, which **silently did nothing** — the table
+existed with `bigserial` id, `actor_role`, `ip inet`, and no `summary` or `reason`. The entity then
+failed schema validation against a table I thought I had written. `IF NOT EXISTS` on a table whose
+shape you have not checked is a way to believe you have migrated something you have not.
+
+What changed and why:
+
+| was | now | why |
+|---|---|---|
+| `bigserial` id | `uuid` | an append-only log's id should not be a sequence that reveals volume and hands out ids |
+| `actor_role` | `actor_roles` | a record should preserve every authority in force at the time |
+| `ip inet` | `ip_address text` | the recorder does not read it yet, and `inet` has no clean Java mapping |
+| *(none)* | `summary text NOT NULL` | a list of blank descriptions is a list nobody can scan |
+| *(none)* | `reason text` | "an admin suspended a shop" without a reason helps nobody |
+| `shop_id` | **kept** | Phase 1 was right — "everything that happened to this shop" is a one-column index scan, not a string match |
+
+### `REQUIRES_NEW` is not free, and it made the log a liar
+
+The recorder originally ran in its own transaction with swallowed exceptions, so an audit failure
+could never take down a suspension. Two things wrong with that:
+
+**It deadlocks.** `REQUIRES_NEW` suspends the caller's transaction and takes a **second connection**.
+The audit row has foreign keys to the shop and the admin being acted on, so inserting it needs a
+shared lock on rows the suspended transaction holds exclusively and has not committed. The inner
+write waits for the outer commit; the outer commit waits for the caller; the caller waits for the
+inner write. Every test in `AuditTrailIT` hung — not slowly, not with a timeout, just *nothing* for
+thirty minutes. Three parties in a circle, each politely waiting.
+
+**It makes the log lie.** A separate transaction commits the audit row whether or not the action
+commits. So a suspension that rolls back leaves a record saying a shop was suspended, and one that
+succeeds can lose its record. The log stops being evidence.
+
+So it joins the caller's transaction (`REQUIRED`) and lets failures propagate. **Failing closed is
+correct for an audit log**: "we could not record it, so we did not do it" is defensible; "we did it
+unrecorded" is the failure Phase 7 exists to prevent.
+
+### Audit at the service, not the controller — which the tests caught
+
+I first wired auditing into `AdminShopController` and `AdminWalletController`. Four tests failed
+because they call the *services* directly and recorded nothing.
+
+The tests were right and the wiring was wrong. A service is the only layer every caller passes
+through; recording in a controller makes the log complete for HTTP and silent for everything else —
+so "every privileged action lands in the audit log" would be true of the admin UI and false of the
+platform. A scheduled retry, a future support tool, a CLI script: all invisible.
+
+The audit calls now live in `VerificationService`, `WalletTopUpService` and
+`SubscriptionPaymentService`. The controllers were stripped back, because recording in both places
+writes two rows for one action and **a log with duplicates in it is a log nobody can count**.
+
+### A closed action vocabulary, for the same reason `FeatureKey` is one
+
+`AuditAction` is an enum, so an action nobody classified is a compile error rather than a string
+nothing matches. Each value knows its `group()` (what the operator filters by), its `verb()` (how a
+summary reads), and whether it `requiresReason()`.
+
+`WALLET_ADJUST` is deliberately its own action rather than a top-up variant: it is the only way to
+change a balance without money arriving, so it is the first thing an investigator looks for.
+
+### The expiry sweep is an actor
+
+The hourly sweep records `SUBSCRIPTION_EXPIRED` with a **null human actor** and `actor_email = 'system'`.
+A subscription can be revoked with nobody having touched it, and an investigator looking at a shop
+that lost its commission needs to *read* "the scheduler did this" off the log, not infer it from a
+missing row. Human and machine actions have to be separable or the log answers half its questions
+with a shrug.
+
+### Platform settings, and a commission rate that can finally be changed
+
+`CommissionCalculator.DEFAULT_RATE_BP = 500` meant the platform's single most consequential number
+could not be changed by anyone entitled to change it. It is now a seeded setting, **seeded at 500** —
+byte-for-byte what the constant was — so moving it from code to data changes no behaviour and no
+historical order. That is what makes it provably safe rather than probably safe.
+
+`OrderService.accept` reads the rate at the one moment commission is decided and freezes it onto the
+order, so a rate change affects orders accepted afterwards and **never** one already accepted. There
+is a test for exactly that, because it is the way this feature could quietly cost real money.
+
+Refusals are specific rather than generic, because each one is a different absurd outcome:
+
+| input | refused because |
+|---|---|
+| `-1` bp | negative commission pays a shop to sell |
+| `10001` bp | takes more than the order is worth; produces negative order totals |
+| `"five percent"` | would silently fall back to 5% while the screen says otherwise |
+| `"rupees"` | a currency is an ISO code |
+
+### The jsonb trap, twice
+
+Both new entities hit it: Hibernate cannot infer a JDBC type for a `String` on a jsonb column and
+fails at boot with `wrong column type encountered in column [value] ... expecting varchar(255)` — a
+message that reads like a migration mistake rather than a missing `@JdbcTypeCode(SqlTypes.JSON)`.
+Recorded in V14's note so the fourth occurrence is not a surprise.
+
+And the third appearance of the `BaseEntity` trap (V11, V12, V14): every entity extends `BaseEntity`,
+which maps `created_at` **and** `updated_at`. Included here even though this log is append-only and
+nothing will ever update a row — so the column will equal `created_at` forever, which a reviewer
+should read as "nothing has ever updated a row". That is the point of an append-only log.
+
+### One bug worth recording
+
+`rawValue` was `.map(Function.identity())`, left over from chasing a compile error — so it returned
+the whole `Setting` entity. Every reader then called `String.valueOf(...)` on it, got
+`com...PlatformSettings$Setting@134b2645`, failed to parse that as a number, and fell back to the
+default. **Every read returned 500 and every write appeared to do nothing** — which is the worst
+failure mode a settings screen can have, because it looks like the feature is not taking effect
+rather than like a bug.
+
+### Status
+
+```
+backend  6,079 tests, 0 failures, 0 errors, 0 skipped   (+63 in Phase 8)
+
+Phase 7 COMPLETE — foundation, admin features, and ten admin screens
+  V14  audit_log (replaces the Phase 1 declaration, with a guard)
+       platform_setting seeded for every key the code reads
+  V15  shop.is_featured  (described in Phase 1, never actually created)
+  V16  app_user.roles   (there was nowhere to ask "is this an admin?")
+  audit    AuditAction (closed vocabulary, groups, verbs, reason rules)
+           AuditLog (append-only, only changed fields in before/after)
+           AuditTrail (REQUIRED, fails closed)
+           AuditLogRepository (no update, no delete method)
+           AdminAuditController (filtered, paginated, per-entity, summary)
+  settings PlatformSettings (typed keys, validated writes, defaults)
+  kpis     KpiRepository (aggregate SQL, JDBC), KpiService,
+           AdminPlatformController (windowed, every ratio names its denominator)
+  shops    ShopAdministrationService (feature/unfeature, filtered browse),
+           Shop.feature()/unfeature() — audited, with the diff recorded
+  users    UserAdministrationService (both realms, suspend needs a reason,
+           admins cannot be suspended), AdminSupportController
+  reports  ReportService (7 reports, CSV rendered from the same rows,
+           formula-injection-safe and numbers left as numbers)
+  support  SupportService (notification history; the email log is the same
+           rows with channel=EMAIL, not a second table)
+  explorer DataExplorerController (the live routing table), DataExplorerProbe
+           (a real HTTP call back in, forwarding the caller's token),
+           OpenApiConfig
+  ui       admin-dashboard · admin-shops · admin-users · admin-audit ·
+           admin-reports · admin-explorer · admin-support
+  wired    VerificationService, WalletTopUpService,
+           SubscriptionPaymentService, SubscriptionExpiryJob, OrderService
+  tested   AuditTrailIT 15 · PlatformSettingsIT 15 · AdminPlatformIT 18 ·
+           UserAdministrationIT 15 · ReportServiceIT 14 ·
+           SupportServiceIT 14 · DataExplorerIT 10 · AdminAuditQueryIT 10
+
+frontend 10/10 packages typecheck
+browser  check-phase7.mjs — 7 screens, nav reachability, a live probe (HTTP 200),
+         a diff view opening. PHASE 7 UI OK.
+         check-phase6.mjs ALL PAGES OK · check-ui.mjs: 1 pre-existing failure
+         (a remote vecteezy.com image in the dev DB, unreachable, in no source file)
+```
+
+## Appendix AF — Phase 7 complete: the admin platform, and four bugs that looked like something else
+
+Phase 7's foundation (Appendix AE) gave the platform an audit log and a settings store. This
+appendix records the admin features built on top of them, and — more usefully — the four failures
+that each presented as a completely different problem than the one they were.
+
+### What was built
+
+| Area | What it does | Where |
+|---|---|---|
+| KPI dashboard | GMV, orders, commission, ARPU ×2, churn, active shops, buyers, revenue split by shop type | `KpiService`, `KpiRepository`, `admin-dashboard.tsx` |
+| Shop management | Filter by type/status/featured, search, feature and unfeature — audited | `ShopAdministrationService`, `AdminShopController`, `admin-shops.tsx` |
+| User management | Both Keycloak realms in one list, suspend with a required reason, reinstate | `UserAdministrationService`, `AdminSupportController`, `admin-users.tsx` |
+| Reports | Sales, products, shops, types, taxes, payouts, ledger — JSON and CSV from the same rows | `ReportService`, `AdminReportController`, `admin-reports.tsx` |
+| Audit log | Append-only list with a field-level diff | `admin-audit.tsx` |
+| Data explorer | The live routing table, browsable; admin `GET`s only | `DataExplorerController`, `DataExplorerProbe`, `admin-explorer.tsx` |
+| Support tooling | Notification history and the email log, with retries and errors | `SupportService`, `admin-support.tsx` |
+
+Two migrations: `V15__featured_shops.sql` (the `is_featured` column the plan described in Phase 1
+but which was never created) and `V16__app_user_roles.sql`.
+
+### Four bugs, each of which pointed somewhere else
+
+**1. A misplaced annotation, reported as a type error.** Adding `roles` to `AppUser` by inserting
+before `@Column(name = "status")` put it *between* the `@Enumerated` above that column and the
+column itself. 634 tests failed with:
+
+```
+Property 'AppUser.roles' is annotated '@Enumerated' but its type 'java.lang.String' is not
+```
+
+Nothing in that message points at the annotation sitting two lines above. The field looked fine in
+review — it was, syntactically. Lombok's `@Getter` stopped being generated across the whole
+module at the same time, which is what made it look like a build problem rather than an edit.
+
+**2. A documented Spring Data shape that does not register.** `KpiRepository` began as a plain
+interface whose every method was a `@Query`. Spring Data does not scan it — documented, but real —
+and the application failed to start with `NoSuchBeanDefinitionException: KpiRepository`. The
+documented fix is `extends Repository<KpiRepository, Void>`, which was tried and also did not
+register. Rather than keep guessing at a scanner's acceptance rules, it became a `@Repository`
+class over `NamedParameterJdbcTemplate`: no scanning question at all, and the right shape for
+aggregate SQL that has no entity behind it.
+
+**3. A verb-case mismatch that made the feature work perfectly and do nothing.**
+`SAFE_METHODS.contains(method.toLowerCase())` against `List.of("GET")` is always false. So the data
+explorer marked *every* operation as unsafe — the screen rendered perfectly, showed the whole
+contract, and offered nothing to run. Nothing threw. The only reason it was caught is a test that
+asserted `runnableCount() > 0` rather than one that asserted the page loaded.
+
+**4. A correct-looking CSV export that would have broken every spreadsheet.** The obvious
+formula-injection guard prefixes any cell starting with `= + - @`. That includes `-250` — so every
+refund, every debit, every negative balance in a financial export would have been written as text,
+and the file would no longer open as numbers. The fix is to parse rather than pattern-match:
+`Double.parseDouble` already knows what a number is, and a formula never parses as one.
+
+### Decisions worth recording
+
+**Featuring is editorial, not an entitlement.** `is_featured` is a flag on the shop and is
+deliberately absent from `plan_entitlement`. A slot a shop can buy is an advertisement; calling it a
+feature would be dishonest about what it is. The plan and the prominence are different things, and
+merging them would let subscription money buy editorial judgement.
+
+**Churn is activity, not subscription.** A shop that stopped receiving orders has churned whether
+or not it still pays for a plan. Counting only subscription lapses would report a marketplace full
+of dormant shops as healthy — they are all still paying for something they no longer use.
+
+**The summary tiles ignore the filters.** "Of everything in the last 30 days, how much failed" is
+the question someone opens the support screen with. A summary that moved as the filters changed
+would describe the current selection instead, and the two read as the same number.
+
+**The email log is `channel = EMAIL`, not a second table.** A separate record of the same send
+would disagree with the first — most visibly on a retry, where one table has a row with two
+attempts and a separate log would have two rows.
+
+**`app_user` gained a `roles` column.** There was nowhere to ask "is this account an admin?", which
+made an `ops` platform admin indistinguishable from an `ops` shop owner. That mattered concretely:
+the guard that stops an admin suspending another admin needs to know who is an admin, and the only
+alternatives were omitting the guard (any admin could lock every operator out, with no recovery
+path from inside the platform) or asking Keycloak on every check. Roles are stamped by
+`IdentitySyncService` on the one path every authenticated request takes, so a role change takes
+effect on the holder's next request rather than at some cleanup job nobody remembers to run.
+
+**One endpoint per path.** Three separate ambiguous-mapping failures during this phase, each
+naming two controllers and neither saying the cause was duplication. `/api/v1/admin/shops` is now
+owned by `AdminShopController` and `/api/v1/admin/users` by `AdminSupportController`.
+
+**The explorer runs a real HTTP call back into the app, forwarding the caller's own token.** A
+direct service call would answer a different question — it would bypass the security filters,
+method security and validation, which are exactly the things an operator is trying to see. Forwarding
+the token also keeps it honest: a probe can only ever show what the caller could already see.
+
+### Honest notes
+
+- A crafted path is rejected by a `@Pattern` on the request body *and* re-checked in the
+  controller. The body validation is at the edge; the re-check is because the contract shown on
+  screen is a snapshot, and a hand-typed form is not.
+- Every optional SQL filter is written `CAST(:x AS text) IS NULL`. As `:x IS NULL`, Postgres has
+  nothing to infer the parameter's type from and fails with "could not determine data type of
+  parameter $2" — an error that names a placeholder number rather than the filter that caused it.
+- `Instant` cannot be bound or read through the Postgres driver as `TIMESTAMP_WITH_TIMEZONE`: it
+  wants an `OffsetDateTime` in and an `OffsetDateTime` out. Both messages point at the schema.
+- `check-ui.mjs` still reports the one pre-existing storefront failure — a remote image URL in the
+  dev database pointing at `vecteezy.com`, which is unreachable and is in no source file.
+
+## Appendix AG — Phase 8: returns, refunds and social selling, and the bugs that looked like data
+
+Phase 7 built the admin platform. Phase 8 is the customer-facing half of the marketplace: money
+going back, and orders arriving from outside the storefront. The decisions were taken on 18 Oct 2026
+and the blocking Open Question #7 is answered.
+
+### D14, resolved
+
+The **shop's wallet pays** a refund and the platform **reverses commission in proportion** to the
+returned portion. The alternative — reverse nothing until the whole order comes back — is simpler
+and means the platform earns commission on goods it has just given a refund for, a cost that grows
+exactly as fast as returns do.
+
+Proven on real data, not asserted: an order of Rs. 900 with Rs. 450 of commission, one of two units
+returned.
+
+| | before | after |
+|---|---|---|
+| Wallet | 2,886,500 | 2,843,750 |
+| `REFUND_DEBIT` | — | −45,000 |
+| `COMMISSION_REVERSAL` | — | +2,250 |
+
+2,250 is exactly half of 4,500, and the ledger's own description says `(50.0% of the order)`.
+
+### What was built
+
+| Feature | Where | Notes |
+|---|---|---|
+| Return requests | `ReturnRequest`, `ReturnItem`, `ReturnService`, `ReturnController` | A separate table, not a status on the order |
+| Partial refunds | `WalletService.reverseDebitPartially` | Floors, never rounds up |
+| Social selling | `ShareService`, `ShareController`, `share-sheet.tsx` | WhatsApp primary; Messenger, Viber, copy |
+| Click attribution | `share_click` + `ShareClickRepository` | Per channel, per product, rate-limited |
+| Pickup orders | `ShopOrder.FulfilmentMethod`, `switchToPickup` | Shipping zeroed, total recomputed |
+| Abandoned carts | `AbandonedCartService` | Claimed in the same statement that selects them |
+| Campaigns | `Campaign`, `CampaignService`, `CampaignController` | Window, not a cron string |
+| Tax per shop | `ReportService.taxesByShop` + `taxes-by-shop` report | From the orders' frozen figures |
+
+Migration `V17__returns_pickup_campaigns.sql` — returns, pickup, abandoned carts, campaigns and
+share clicks.
+
+### Decisions worth recording
+
+**A return is a row, not a status.** The order moves to `RETURNED` only when the *entire* order value
+has come back. Marking it returned while three of four items are still with the customer is a claim
+the order cannot make, and "the whole order came back" is frequently two partial returns — which is
+why that check is a query, not a field.
+
+**Approve and refund are separate, on both sides.** Approving records a decision and takes no money;
+refunding debits the wallet. One endpoint would credit a customer's refund the moment a shop
+clicked a button, and the payment would then fail with the wallet already debited. The screen says
+so before anything is clicked, and the test pins it.
+
+**A refund the shop cannot afford leaves the return approved and visible.** `WalletService` refuses
+a debit that would go negative and the refusal propagates, so nothing partial is written. The
+alternative — skipping it — is a state somebody has to notice without being told.
+
+**Rounding floors.** A credit that over-reverses by one paisa is a balance that never reconciles
+again. The test asserts the direction, not the value, because the value is arithmetic and the
+direction is the decision.
+
+**Featuring and promotions are not entitlements.** A campaign is a window a shop sets. A paid slot
+on the front page would be an advertisement.
+
+### Three bugs, each of which presented as something else
+
+**1. A user id where a shop id belonged.** `ReturnController` passed
+`currentUser.require().getId()` — an `app_user` id — where `queueFor` expected a `shop` id. The
+queue returned an empty list for **every** shop, which reads exactly like "you have no returns
+yet" and is indistinguishable from the feature simply having nothing to show. Found because a real
+return, created through a real customer token, did not appear in the real shop's queue. Both
+`ReturnController` and `CampaignController` had it; both now use `tenantGuard.requireOwnedShop()`,
+and `TenantGuard` gained `currentUserId()` so the account id and the shop id are named separately —
+a rule enforced in the wrong direction produces an empty result rather than an error.
+
+**2. A lazy collection read after the transaction closed.** `ReturnRequest.items` is `@OneToMany`
+lazy, and the controller mapped it after the service returned, so every queue request 500'd with
+`LazyInitializationException: failed to lazily initialize a collection ... could not initialize
+proxy - no Session`. The message names proxies and says nothing about the missing fetch or the
+transaction that had already closed. The views are now built *inside* the service, which is the only
+place that can see them.
+
+**3. A share endpoint with no ownership check.** `ShareController` took a shop id in the path and
+checked only the caller's role, so any shop owner could read another shop's share links and, through
+the click-stats endpoint, its traffic. Fixed with `@tenantGuard.owns(#shopId)` on all four
+shop-scoped endpoints — and pinned by a test that reflects over the annotations and fails if one is
+missing, because the hole is in an annotation and no service-level unit test could ever have caught
+it.
+
+Also worth recording: the console's product row had a "share" link pointing at
+`/s/your-shop/<slug>` — the literal string `your-shop`, so it linked nowhere. It looked like a
+working share button, which is exactly why nothing had caught it.
+
+### Honest notes
+
+- The WhatsApp *group* invite is not a server-minted link. `chat.whatsapp.com` invites are created
+  inside the WhatsApp app by an admin and expire; the API cannot produce one. The share sheet says
+  so rather than handing every shop a link that 404s.
+- The abandoned-cart sweep runs every 30 minutes and reminds once, two hours after the last change.
+  Abandoned is measured from `last_active_at`, not from creation — a cart somebody keeps adding to
+  is not abandoned, and emailing about it is the fastest way to get a shop's reminders switched off.
+- The dev database had to be given a customer for the browser check to drive a return end to end.
+  That was done through the real API (`IdentitySync` created the account from a real customer
+  token), not by inserting rows, so the state is one the platform would actually have produced.
+- Guest carts are recorded but never emailed — there is nobody to email. The sweep skips them
+  deliberately rather than marking them reminded, so they are not silently consumed.

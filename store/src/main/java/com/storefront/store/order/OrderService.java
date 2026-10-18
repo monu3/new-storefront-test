@@ -59,6 +59,7 @@ public class OrderService {
 	private final OrderNumberService orderNumbers;
 	private final InventoryService inventory;
 	private final WalletService wallet;
+	private final com.storefront.store.platform.PlatformSettings platform;
 	private final com.storefront.store.notification.OutboxService outbox;
 	private final CommissionCalculator commissions = new CommissionCalculator();
 
@@ -156,9 +157,20 @@ public class OrderService {
 		Money shipping = Money.ofMinor(order.getShippingMinor());
 		Money tax = Money.ofMinor(order.getTaxMinor());
 
+		// The rate comes from platform settings, not a constant. It was
+		// CommissionCalculator.DEFAULT_RATE_BP, which meant the number the platform charges could not
+		// be changed by anybody entitled to change it.
+		//
+		// <p>Read here, at the one moment commission is decided, and then frozen onto the order -- so a
+		// rate change affects orders accepted afterwards and never touches one already accepted. That
+		// is the whole reason `freezeCommission` exists.
+		//
+		// <p>`!shop.paysCommission()` rather than reading the entitlement again: the commission plan on
+		// the shop IS the derived answer, set when a subscription activates or lapses, and re-deriving
+		// it here would be a second source of truth that could disagree with the first.
 		CommissionCalculator.Commission commission = commissions.calculate(
 				subtotal, discount, shipping, tax,
-				CommissionCalculator.DEFAULT_RATE_BP, !shop.paysCommission());
+				platform.commissionRateBp(), !shop.paysCommission());
 
 		if (commission.isChargeable()) {
 			wallet.debit(shop.getId(),
@@ -279,6 +291,51 @@ public class OrderService {
 		record(order, from, ShopOrder.Status.CANCELLED, actorUserId, reason);
 		orders.saveAndFlush(order);
 		recordEvent(order, "ORDER_CANCELLED", eventPayload(order, shop));
+		return order;
+	}
+
+	/**
+	 * Marks a whole order returned, once every unit of it has come back (Phase 8, D14).
+	 *
+	 * <p><b>Only for a complete return.</b> A partial return leaves the order {@code DELIVERED},
+	 * because moving it to {@code RETURNED} would claim the whole order is back with the shop when
+	 * most of it is not — and that is exactly the claim this method refuses to make on its own. It
+	 * is {@code ReturnService} that knows whether the return is complete, and it calls this only
+	 * then.
+	 *
+	 * <p><b>No money moves here.</b> The refund was already executed by {@code ReturnService} as its
+	 * own step, and doing it again would move it twice. This records the state change and the
+	 * history row, which is all an order transition is.
+	 */
+	@Transactional
+	public ShopOrder markReturned(Shop shop, ShopOrder order, UUID actorUserId) {
+		stateMachine.require(order.getStatus(), ShopOrder.Status.RETURNED);
+
+		ShopOrder.Status from = order.getStatus();
+		stateMachine.apply(order, ShopOrder.Status.RETURNED);
+		record(order, from, ShopOrder.Status.RETURNED, actorUserId,
+				"Every unit returned and refunded");
+		return orders.saveAndFlush(order);
+	}
+
+	/**
+	 * Switches a PENDING order to collection by the customer (Phase 8).
+	 *
+	 * <p><b>Offered here rather than at checkout on purpose.</b> A pickup order is a delivery order
+	 * the customer changed their mind about, and the common case is "I will come and get it" typed
+	 * after placing — not a different button on a checkout form that most shops never turn on. The
+	 * rule still lives on the entity, so neither route can bypass it.
+	 */
+	@Transactional
+	public ShopOrder switchToPickup(Shop shop, ShopOrder order, String note, UUID actorUserId) {
+		ShopOrder.Status from = order.getStatus();
+		order.switchToPickup(note);
+
+		// The total moved, so the timeline row records why rather than only the status.
+		record(order, from, from, actorUserId,
+				"Switched to pickup: " + note);
+		orders.saveAndFlush(order);
+		recordEvent(order, "ORDER_PICKUP", eventPayload(order, shop));
 		return order;
 	}
 

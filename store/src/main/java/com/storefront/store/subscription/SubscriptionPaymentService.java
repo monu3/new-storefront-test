@@ -55,6 +55,7 @@ public class SubscriptionPaymentService {
 	private final SubscriptionService subscriptions;
 	private final ShopSubscriptionRepository subscriptionRows;
 	private final ShopRepository shops;
+	private final com.storefront.store.audit.AuditTrail audit;
 
 	/**
 	 * Settles a subscription purchase: credit, charge, activate.
@@ -112,6 +113,21 @@ public class SubscriptionPaymentService {
 
 		ShopSubscription active = subscriptions.activate(subscription, startedAt, request.getId());
 
+		// Recorded here, in the one method that can start a subscription, rather than in
+		// AdminWalletController. A caller that reached settle() over anything other than that
+		// endpoint -- a scheduled retry, a future support tool -- would otherwise start a
+		// subscription that appears in no log at all, which is the one thing an audit log exists to
+		// prevent.
+		audit.record(com.storefront.store.audit.AuditAction.SUBSCRIPTION_APPROVE,
+				"WalletTopUpRequest",
+				requestId,
+				"Started " + subscription.getPlan().getName() + " for shop " + shop.getId()
+						+ " (" + subscription.getPlan().priceDisplay() + "), until "
+						+ active.getExpiresAt(),
+				reviewNote,
+				com.storefront.store.audit.AuditTrail.field("status", "PENDING_PAYMENT"),
+				com.storefront.store.audit.AuditTrail.field("status", "ACTIVE"));
+
 		log.info("Shop {} subscribed to {} for {} via top-up {}",
 				shop.getId(), subscription.getPlan().getCode(), priceMinor, requestId);
 
@@ -152,6 +168,41 @@ public class SubscriptionPaymentService {
 	 */
 	private String chargeKey(ShopSubscription subscription) {
 		return "sub-charge:" + subscription.getId();
+	}
+
+	/**
+	 * Rejects a subscription purchase.
+	 *
+	 * <p>In the payment service for the same reason {@link #settle} records there: the endpoint is
+	 * not the only thing that can reject one, and the log has to see both.
+	 *
+	 * @param reason required; the shop is told it and can fix what to fix
+	 */
+	@Transactional
+	public void reject(UUID requestId, UUID adminUserId, String reason) {
+		WalletTopUpRequest request = topUps.require(requestId);
+
+		com.storefront.store.audit.AuditTrail.requireReason(
+				com.storefront.store.audit.AuditAction.SUBSCRIPTION_REJECT, reason);
+
+		topUps.reject(requestId, adminUserId, reason);
+
+		if (request.getSubscriptionId() != null) {
+			subscriptions.abandonPending(request.getSubscriptionId(), request.getShopId());
+		}
+
+		audit.record(com.storefront.store.audit.AuditAction.SUBSCRIPTION_REJECT,
+				"WalletTopUpRequest",
+				requestId,
+				"Rejected a subscription payment of "
+						+ com.storefront.store.common.Money.ofMinor(request.getAmountMinor()).toDisplay()
+						+ " for shop " + request.getShopId(),
+				reason,
+				com.storefront.store.audit.AuditTrail.field("status", request.getStatus()),
+				com.storefront.store.audit.AuditTrail.field("status", "REJECTED"));
+
+		log.info("Subscription payment {} rejected by {}: {}",
+				requestId, adminUserId, reason);
 	}
 
 	/** Maps to HTTP 409. */

@@ -52,6 +52,7 @@ public class AdminWalletController {
 	private final WalletTopUpRepository requests;
 	private final com.storefront.store.shop.ShopRepository shops;
 	private final com.storefront.store.subscription.SubscriptionPlanRepository plans;
+	private final com.storefront.store.subscription.SubscriptionPaymentService subscriptionPayments;
 	private final CurrentUser currentUser;
 
 	/**
@@ -94,8 +95,24 @@ public class AdminWalletController {
 	public WalletTopUpRequest.TopUpView approve(@PathVariable UUID requestId,
 			@Valid @RequestBody(required = false) DecisionRequest request) {
 
-		return WalletTopUpRequest.TopUpView.from(topUps.approve(requestId,
-				currentUser.optionalUserId(), request == null ? null : request.note()));
+		String note = request == null ? null : request.note();
+
+		// A subscription purchase must go through SubscriptionPaymentService, which also charges the
+		// plan price and activates it.
+		//
+		// <p>Approving one with the plain wallet path would credit the wallet and never start the
+		// subscription: the shop's bank statement would match, its balance would go up, and it would
+		// have no plan. That failure reads as a successful payment from both sides, which is what makes
+		// it dangerous rather than merely wrong.
+		if (topUps.require(requestId).getSubscriptionId() != null) {
+			subscriptionPayments.settle(requestId, currentUser.require().getId(), note);
+			return WalletTopUpRequest.TopUpView.from(topUps.require(requestId));
+		}
+
+		// Audited inside WalletTopUpService, not here: this controller is one caller, and a log that
+		// only records what arrived through it is a log of the UI rather than of the platform.
+		return WalletTopUpRequest.TopUpView.from(
+				topUps.approve(requestId, currentUser.optionalUserId(), note));
 	}
 
 	/** Rejects. A reason is required, so the shop knows what to fix. */
@@ -105,11 +122,13 @@ public class AdminWalletController {
 	public WalletTopUpRequest.TopUpView reject(@PathVariable UUID requestId,
 			@Valid @RequestBody DecisionRequest request) {
 
-		if (request == null || request.note() == null || request.note().isBlank()) {
-			// Checked here as well as in the entity so the API returns a field error naming the
-			// field, rather than a bare "must not be blank".
-			throw new IllegalArgumentException("Give a reason so the shop knows what to fix");
+		// A subscription rejection also abandons the queued request, so it takes the same route as
+		// the approval for the same reason.
+		if (topUps.require(requestId).getSubscriptionId() != null) {
+			subscriptionPayments.reject(requestId, currentUser.require().getId(), request.note());
+			return WalletTopUpRequest.TopUpView.from(topUps.require(requestId));
 		}
+
 		return WalletTopUpRequest.TopUpView.from(
 				topUps.reject(requestId, currentUser.optionalUserId(), request.note()));
 	}

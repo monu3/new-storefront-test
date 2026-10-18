@@ -148,6 +148,7 @@ public class CustomerOrderController {
 
 	private OrderLine line(OrderItem item) {
 		return new OrderLine(
+				item.getId(),
 				item.getProductName(),
 				item.getVariantName(),
 				item.getQuantity(),
@@ -206,7 +207,15 @@ public class CustomerOrderController {
 	public record Step(String status, String note, java.time.Instant at) {
 	}
 
+	/**
+	 * One line of an order, as the customer sees it.
+	 *
+	 * <p>{@code id} added in Phase 8: a return request names the lines it covers by id, and without
+	 * one the customer screen could only ask "return everything", which is the one thing a return
+	 * workflow is not for.
+	 */
 	public record OrderLine(
+			java.util.UUID id,
 			String productName,
 			String variantName,
 			int quantity,

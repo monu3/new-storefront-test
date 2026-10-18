@@ -53,6 +53,17 @@ public class SingleOrderTransitionService {
 			case SHIPPED -> orders.markShipped(shop, order, actorUserId);
 			case DELIVERED -> orders.markDelivered(shop, order, actorUserId);
 			case CANCELLED -> orders.cancel(shop, order, reason, actorUserId);
+			// Phase 8 (D14). The money for a return moves in ReturnService, as a separate step from
+			// the decision; this only records that the order ended up back with the shop. The case is
+			// listed rather than falling through to the "cannot move back to PENDING" default,
+			// because a switch that silently ignores a status is how a return appears to work.
+			case RETURNED -> orders.markReturned(shop, order, actorUserId);
+			// REFUNDED is reachable only through the same path as RETURNED today; listed so that a
+			// future direct refund has an obvious home rather than landing in the default branch.
+			case REFUNDED -> throw new IllegalStateException(
+					"An order is not moved to REFUNDED directly. A refund runs through a return "
+							+ "request, which moves the order to RETURNED.");
+			
 			// An order is created PENDING; there is no transition back to it, and pretending
 			// otherwise would let a cancelled order be resurrected.
 			case PENDING -> throw new IllegalStateException("An order cannot be moved back to PENDING");

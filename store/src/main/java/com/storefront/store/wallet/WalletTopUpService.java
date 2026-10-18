@@ -30,6 +30,7 @@ public class WalletTopUpService {
 
 	private final WalletTopUpRepository requests;
 	private final WalletService wallet;
+	private final com.storefront.store.audit.AuditTrail audit;
 
 	// ------------------------------------------------------------------ shop side
 
@@ -122,6 +123,7 @@ public class WalletTopUpService {
 	@Transactional
 	public WalletTopUpRequest approve(UUID requestId, UUID adminUserId, String reviewNote) {
 		WalletTopUpRequest request = load(requestId);
+		WalletTopUpRequest.Status statusBefore = request.getStatus();
 
 		WalletLedgerEntry entry = wallet.credit(request.getShopId(),
 				WalletLedgerEntry.EntryType.TOPUP_APPROVED,
@@ -134,6 +136,25 @@ public class WalletTopUpService {
 				null);
 
 		request.approve(adminUserId, reviewNote, entry.getId());
+
+		// Recorded here rather than in AdminWalletController: this service is the only way a top-up is
+		// approved, so it is the only place the record can be guaranteed. A controller that also
+		// recorded would write two rows for one action, and a log with duplicates in it is a log
+		// nobody can count.
+		//
+		// Subscription purchases never arrive here -- they go through SubscriptionPaymentService,
+		// which charges the plan and activates it as well as crediting -- so this is always a plain
+		// wallet top-up and one action name is correct.
+		audit.record(com.storefront.store.audit.AuditAction.WALLET_TOPUP_APPROVE,
+				"WalletTopUpRequest",
+				request.getId(),
+				"Approved a top-up of "
+						+ com.storefront.store.common.Money.ofMinor(request.getAmountMinor()).toDisplay()
+						+ " for shop " + request.getShopId(),
+				reviewNote,
+				com.storefront.store.audit.AuditTrail.field("status", statusBefore),
+				com.storefront.store.audit.AuditTrail.field("status", WalletTopUpRequest.Status.APPROVED));
+
 		log.info("Top-up {} approved: {} credited to shop {}",
 				request.getId(), request.getAmountMinor(), request.getShopId());
 		return requests.saveAndFlush(request);
@@ -143,7 +164,20 @@ public class WalletTopUpService {
 	@Transactional
 	public WalletTopUpRequest reject(UUID requestId, UUID adminUserId, String reason) {
 		WalletTopUpRequest request = load(requestId);
+		WalletTopUpRequest.Status statusBefore = request.getStatus();
+
 		request.reject(adminUserId, reason);
+
+		audit.record(com.storefront.store.audit.AuditAction.WALLET_TOPUP_REJECT,
+				"WalletTopUpRequest",
+				requestId,
+				"Rejected a top-up of "
+						+ com.storefront.store.common.Money.ofMinor(request.getAmountMinor()).toDisplay()
+						+ " for shop " + request.getShopId(),
+				reason,
+				com.storefront.store.audit.AuditTrail.field("status", statusBefore),
+				com.storefront.store.audit.AuditTrail.field("status", WalletTopUpRequest.Status.REJECTED));
+
 		log.info("Top-up {} rejected: {}", requestId, reason);
 		return requests.saveAndFlush(request);
 	}

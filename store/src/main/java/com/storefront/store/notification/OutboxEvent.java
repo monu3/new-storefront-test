@@ -42,6 +42,8 @@ public class OutboxEvent {
 	/** Aggregate type names, matching what the notification worker routes on. */
 	public static final String ORDER = "ORDER";
 	public static final String SHOP = "SHOP";
+	/** A customer's basket rather than an order (Phase 8, abandoned-cart reminders). */
+	public static final String CART = "CART";
 
 	@Id
 	@Column(name = "id", nullable = false, updatable = false)

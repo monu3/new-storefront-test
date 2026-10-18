@@ -105,6 +105,19 @@ public class AppUser extends BaseEntity {
 	@Column(name = "avatar_url")
 	private String avatarUrl;
 
+	/**
+	 * Comma-separated authorities from the token at last sign-in, e.g. {@code ROLE_ADMIN,ROLE_SHOP}.
+	 *
+	 * <p>Added in Phase 7 because there was nowhere to answer "is this account an admin?", which
+	 * made an {@code ops} account that is a platform admin indistinguishable from one that owns a
+	 * shop. The guard that stops an admin suspending another admin needs it, and the alternative was
+	 * asking Keycloak for an answer this platform can give itself.
+	 *
+	 * <p>Null until the account has signed in at least once — seed data has no token.
+	 */
+	@Column(name = "roles")
+	private String roles;
+
 	@Enumerated(EnumType.STRING)
 	@Column(name = "status", nullable = false)
 	private Status status = Status.ACTIVE;
@@ -136,5 +149,37 @@ public class AppUser extends BaseEntity {
 	/** Administrative suspension. Explicit rather than a setter, so it is always deliberate. */
 	public void suspend() {
 		this.status = Status.SUSPENDED;
+	}
+
+	/**
+	 * Puts a suspended account back.
+	 *
+	 * <p>Idempotent: an admin double-clicking Reinstate should not produce a second log row for a
+	 * no-op.
+	 */
+	public void reinstate() {
+		this.status = Status.ACTIVE;
+	}
+
+	/**
+	 * Records the authorities the token carried, and returns whether anything changed.
+	 *
+	 * <p>Called on every authenticated request, so a role change takes effect on the holder's next
+	 * request rather than at some cleanup job nobody remembers to run. The return value exists so the
+	 * caller can skip a write when nothing moved — writing on every request would mark every
+	 * account dirty on every page view.
+	 */
+	public boolean syncRoles(String authorities) {
+		String next = authorities == null || authorities.isBlank() ? null : authorities.trim();
+		if (java.util.Objects.equals(this.roles, next)) {
+			return false;
+		}
+		this.roles = next;
+		return true;
+	}
+
+	/** Whether this account holds an admin role, read from the roles recorded at last sign-in. */
+	public boolean isAdmin() {
+		return roles != null && roles.toUpperCase(java.util.Locale.ROOT).contains("ROLE_ADMIN");
 	}
 }

@@ -75,4 +75,49 @@ public interface ShopRepository extends JpaRepository<Shop, UUID> {
 	}
 
 	Page<Shop> findByShopType(String shopType, Pageable pageable);
+
+	/**
+	 * The admin's shop list, filtered in SQL (Phase 7).
+	 *
+	 * <p>Every filter nullable, all applied in one query. An admin's shop list is the first screen
+	 * they open and the one that grows fastest; loading every shop to display twenty is a list that
+	 * stops working at exactly the wrong moment.
+	 *
+	 * <p><b>{@code search} blanks rather than passes through</b>: a cleared search box still submits
+	 * an empty string, and {@code '%'} matches every row — which reads as "the filter does nothing".
+	 *
+	 * <p>Owner email is fetched per shop by the service rather than joined here, because it lives on
+	 * {@code app_user} and this query is on {@code shop}; a join for a column shown in one cell of a
+	 * list is a join the database has to plan for every page.
+	 *
+	 * @param type     null for every vertical
+	 * @param status   null for every status
+	 * @param featured null for all, true for featured only, false for unfeatured only
+	 * @param search   null or blank for no text filter, matched on name and slug
+	 */
+	//
+	// NATIVE, not JPQL. `Shop.type` and `Shop.status` both carry converters, and JPQL compares a
+	// converted attribute against the declared parameter type -- so `:type` bound as a String fails
+	// query validation at startup with "validation failed for method ...", which names neither the
+	// converter nor the parameter. The columns are text holding the enum name, so native compares
+	// them directly and honestly.
+	//
+	@Query(value = """
+			SELECT s.* FROM shop s
+			WHERE (:type IS NULL OR s.shop_type = :type)
+			  AND (:status IS NULL OR s.status = :status)
+			  AND (:featured IS NULL OR s.is_featured = :featured)
+			  AND (:search IS NULL
+			       OR lower(s.name) LIKE lower('%' || :search || '%')
+			       OR lower(s.slug::text) LIKE lower('%' || :search || '%'))
+			ORDER BY s.created_at DESC
+			""", nativeQuery = true)
+	Page<Shop> searchAdmin(@Param("type") String type,
+			@Param("status") String status,
+			@Param("featured") Boolean featured,
+			@Param("search") String search,
+			Pageable pageable);
+
+	/** The featured, verified shops the gallery shows first. */
+	List<Shop> findByFeaturedTrueAndStatusOrderByCreatedAtDesc(Shop.Status status);
 }

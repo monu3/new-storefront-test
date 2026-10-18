@@ -3,11 +3,12 @@
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useParams, useRouter } from 'next/navigation';
-import { Package, RefreshCw } from 'lucide-react';
+import { Package, RefreshCw, Undo2 } from 'lucide-react';
 
 import type {
   CustomerPage,
   OrderDetail,
+  OrderLine,
   OrderSummary,
   PaymentStatus,
   ReorderPreview,
@@ -17,7 +18,7 @@ import { cn } from '@store-app/ui';
 
 import { useCart } from '@store-app/state';
 
-import { apiGet } from '../../lib/api';
+import { apiGet, apiPost } from '../../lib/api';
 
 /**
  * The customer's orders (Phase 5).
@@ -110,6 +111,13 @@ export function CustomerOrderDetail() {
       </div>
 
       {payment ? <PaymentBanner payment={payment} /> : null}
+
+      {/* Returns (Phase 8, D14). Offered only on a delivered order -- before delivery the right
+          move is to cancel, which needs no return workflow, and after a refund the order is
+          terminal. */}
+      {order.status === 'DELIVERED' ? (
+        <ReturnPanel orderId={order.id} lines={order.lines} />
+      ) : null}
 
       <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_320px]">
         <Card>
@@ -448,3 +456,165 @@ function formatDateTime(iso: string): string {
   });
 }
 export { CustomerWishlist, CustomerAddresses } from './parts';
+
+/**
+ * The customer's return request (Phase 8, D14).
+ *
+ * <p><b>Per-line quantities, not one button.</b> A return is very often partial -- one damaged item
+ * out of four -- and a single "request a return" control would force a customer to claim all of it
+ * or nothing.
+ *
+ * <p><b>The reason is required, and the panel says why.</b> A return the shop cannot understand is
+ * one they have to guess at, and a guess here costs real money on both sides.
+ *
+ * <p><b>Success says what happens next rather than just closing.</b> "Requested" on its own leaves
+ * a customer wondering whether anybody looked; the shop still has to approve it and the refund has
+ * not run yet.
+ */
+function ReturnPanel({
+  orderId,
+  lines,
+}: {
+  orderId: string;
+  lines: OrderLine[];
+}) {
+  const [open, setOpen] = useState(false);
+  const [reason, setReason] = useState('');
+  const [quantities, setQuantities] = useState<Record<string, number>>({});
+  const [state, setState] = useState<'idle' | 'sending' | 'done' | 'error'>('idle');
+  const [message, setMessage] = useState<string | null>(null);
+
+  async function submit() {
+    const chosen = Object.fromEntries(
+      Object.entries(quantities).filter(([, count]) => count > 0),
+    );
+
+    if (Object.keys(chosen).length === 0 || reason.trim().length === 0) {
+      return;
+    }
+
+    setState('sending');
+
+    try {
+      // `apiPost` throws on a non-2xx with the server's message already attached, so the catch is
+      // the only error path here. Checking `response.ok` on the returned value would be testing a
+      // parsed body for a property it does not have.
+      await apiPost(`/api/v1/orders/${orderId}/returns`, {
+        reason: reason.trim(),
+        quantities: chosen,
+      });
+
+      setState('done');
+    } catch (problem) {
+      setMessage(
+        problem instanceof Error
+          ? problem.message
+          : 'Could not reach the shop. Check your connection and try again.',
+      );
+      setState('error');
+    }
+  }
+
+  if (state === 'done') {
+    return (
+      <Card className="border-emerald-300 bg-emerald-50/40">
+        <CardContent className="p-4">
+          <p className="text-sm font-medium">Your return has been requested</p>
+          <p className="mt-1 text-sm text-muted-foreground">
+            The shop will look at it and tell you what they can refund. You will not be charged again
+            -- the money comes back once they approve it, not when you ask.
+          </p>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  return (
+    <Card>
+      <CardContent className="space-y-3 p-4">
+        <div className="flex items-center justify-between gap-3">
+          <p className="text-sm font-medium">Something not right?</p>
+          <Button size="sm" variant="outline" onClick={() => setOpen((value) => !value)}>
+            <Undo2 className="mr-1.5 size-3.5" aria-hidden />
+            {open ? 'Cancel' : 'Request a return'}
+          </Button>
+        </div>
+
+        {open ? (
+          <>
+            <p className="text-sm text-muted-foreground">
+              Choose what is coming back. You do not have to return the whole order.
+            </p>
+
+            <ul className="space-y-2">
+              {lines.map((line) => (
+                <li key={line.id} className="flex items-center gap-3">
+                  <span className="min-w-0 flex-1 text-sm">
+                    <span className="block truncate">{line.productName}</span>
+                    <span className="text-xs text-muted-foreground">
+                      bought {line.quantity}
+                    </span>
+                  </span>
+                  <label className="text-xs">
+                    <span className="font-medium">Returning</span>
+                    <input
+                      type="number"
+                      min={0}
+                      max={line.quantity}
+                      value={quantities[line.id] ?? 0}
+                      onChange={(event) =>
+                        setQuantities((current) => ({
+                          ...current,
+                          [line.id]: Math.min(
+                            line.quantity,
+                            Math.max(0, Number(event.target.value) || 0),
+                          ),
+                        }))
+                      }
+                      aria-label={`Units returning of ${line.productName}`}
+                      className="mt-1 h-8 w-20 rounded-md border bg-background px-2 text-sm"
+                    />
+                  </label>
+                </li>
+              ))}
+            </ul>
+
+            <label className="block text-sm">
+              <span className="font-medium">Why are you returning it?</span>
+              <textarea
+                value={reason}
+                onChange={(event) => setReason(event.target.value)}
+                maxLength={500}
+                rows={2}
+                placeholder="Damaged, wrong size, no longer needed..."
+                className="mt-1 w-full resize-none rounded-md border bg-background p-2 text-sm"
+              />
+            </label>
+
+            <p className="text-xs text-muted-foreground">
+              A reason helps the shop decide quickly, and it is kept with the request so they can
+              answer you properly if they decline.
+            </p>
+
+            {state === 'error' && message ? (
+              <p role="alert" className="text-sm text-destructive">
+                {message}
+              </p>
+            ) : null}
+
+            <Button
+              onClick={submit}
+              disabled={
+                state === 'sending' ||
+                reason.trim().length === 0 ||
+                Object.values(quantities).every((count) => count === 0)
+              }
+            >
+              {state === 'sending' ? 'Sending...' : 'Send return request'}
+            </Button>
+          </>
+        ) : null}
+      </CardContent>
+    </Card>
+  );
+}

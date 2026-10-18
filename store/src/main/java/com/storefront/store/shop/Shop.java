@@ -108,6 +108,17 @@ public class Shop extends BaseEntity {
 	@Column(name = "follower_count", nullable = false)
 	private int followerCount = 0;
 
+	/**
+	 * Set by an admin to put the shop at the top of the gallery.
+	 *
+	 * <p><b>Not an entitlement.</b> A shop cannot buy its way onto the front page: a paid slot that
+	 * can be purchased is an advertisement, and calling it a feature would be dishonest about what it
+	 * is. This is an editorial decision, which is why it is a flag on the shop and not a row in
+	 * {@code plan_entitlement}.
+	 */
+	@Column(name = "is_featured", nullable = false)
+	private boolean featured = false;
+
 	@Column(name = "published_at")
 	private Instant publishedAt;
 
@@ -156,6 +167,16 @@ public class Shop extends BaseEntity {
 	/** True when the shop pays no commission, i.e. it is on a paid subscription (D4). */
 	public boolean paysCommission() {
 		return commissionPlan == CommissionPlan.FREE;
+	}
+
+	/** Puts the shop at the top of the gallery. Admin only. */
+	public void feature() {
+		this.featured = true;
+	}
+
+	/** Takes it back off. Admin only. */
+	public void unfeature() {
+		this.featured = false;
 	}
 
 	/**

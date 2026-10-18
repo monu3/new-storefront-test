@@ -21,7 +21,6 @@ import { AppShell } from './layouts/app-shell';
 import { NotFound } from './pages/not-found';
 import { LoginPage } from './pages/login';
 import { ForbiddenPage } from './pages/forbidden';
-import { AdminHome } from './pages/admin-home';
 import { ShopTheme } from './pages/shop-theme';
 import { ShopDashboard } from './pages/shop-dashboard';
 import { ShopOrders } from './pages/shop-orders';
@@ -33,9 +32,17 @@ import { ShopDiscounts } from './pages/shop-discounts';
 import { ShopAudience } from './pages/shop-audience';
 import { ShopMediaLibrary } from './pages/shop-media';
 import { ShopSubscription } from './pages/shop-subscription';
+import { ShopReturns } from './pages/shop-returns';
 import { AdminRevenue } from './pages/admin-revenue';
 import { AdminPlans } from './pages/admin-plans';
 import { AdminWallet } from './pages/admin-wallet';
+import { AdminDashboard } from './pages/admin-dashboard';
+import { AdminShops } from './pages/admin-shops';
+import { AdminUsers } from './pages/admin-users';
+import { AdminAudit } from './pages/admin-audit';
+import { AdminReports } from './pages/admin-reports';
+import { AdminExplorer } from './pages/admin-explorer';
+import { AdminSupport } from './pages/admin-support';
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -71,7 +78,62 @@ const router = createBrowserRouter([
     element: <AppShell auth={auth} />,
     children: [
       { index: true, element: <Landing auth={auth} /> },
-      { path: 'admin', element: <RequireRole auth={auth} roles={['ROLE_ADMIN']}><AdminHome /></RequireRole> },
+      {
+        path: 'admin',
+        element: (
+          <RequireRole auth={auth} roles={['ROLE_ADMIN']}>
+            <AdminDashboard auth={auth} />
+          </RequireRole>
+        ),
+      },
+      {
+        path: 'admin/shops',
+        element: (
+          <RequireRole auth={auth} roles={['ROLE_ADMIN']}>
+            <AdminShops auth={auth} />
+          </RequireRole>
+        ),
+      },
+      {
+        path: 'admin/users',
+        element: (
+          <RequireRole auth={auth} roles={['ROLE_ADMIN']}>
+            <AdminUsers auth={auth} />
+          </RequireRole>
+        ),
+      },
+      {
+        path: 'admin/audit',
+        element: (
+          <RequireRole auth={auth} roles={['ROLE_ADMIN']}>
+            <AdminAudit auth={auth} />
+          </RequireRole>
+        ),
+      },
+      {
+        path: 'admin/reports',
+        element: (
+          <RequireRole auth={auth} roles={['ROLE_ADMIN']}>
+            <AdminReports auth={auth} />
+          </RequireRole>
+        ),
+      },
+      {
+        path: 'admin/explorer',
+        element: (
+          <RequireRole auth={auth} roles={['ROLE_ADMIN']}>
+            <AdminExplorer auth={auth} />
+          </RequireRole>
+        ),
+      },
+      {
+        path: 'admin/support',
+        element: (
+          <RequireRole auth={auth} roles={['ROLE_ADMIN']}>
+            <AdminSupport auth={auth} />
+          </RequireRole>
+        ),
+      },
       {
         path: 'shop',
         element: (
@@ -149,6 +211,14 @@ const router = createBrowserRouter([
         element: (
           <RequireRole auth={auth} roles={['ROLE_SHOP']}>
             <ShopTheme auth={auth} />
+          </RequireRole>
+        ),
+      },
+      {
+        path: 'shop/returns',
+        element: (
+          <RequireRole auth={auth} roles={['ROLE_SHOP']}>
+            <ShopReturns auth={auth} />
           </RequireRole>
         ),
       },

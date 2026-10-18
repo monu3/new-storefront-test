@@ -178,6 +178,104 @@ public class WalletService {
 	}
 
 	/**
+	 * Credits back <em>part</em> of a previous debit, for a partial refund (Phase 8, D14).
+	 *
+	 * <p><b>Proportional to what is actually coming back, not all or nothing.</b> The decision was
+	 * taken on 18 Oct 2026 after the alternative was argued properly: a customer returning one
+	 * damaged item out of four gets a quarter of their money back, and the platform should keep a
+	 * quarter of its commission. The "reverse nothing until the whole order comes back" option is
+	 * simpler and it means the platform earns commission on goods it has just given a refund for —
+	 * which is a cost that grows exactly as fast as returns do.
+	 *
+	 * <p><b>The proportion is computed once, here, and written to the ledger row.</b> Nothing
+	 * downstream re-derives it. Commission is a platform setting and settings change; if the rate
+	 * were read again at reconciliation time, a return decided under 5% would be re-evaluated under
+	 * the next rate and the two would disagree.
+	 *
+	 * <p><b>Rounding is floor, not round.</b> On a 10-paisa commission, a third of it is 3, not 3.33.
+	 * Rounding to nearest can credit a paisa more than was charged, and the ledger's whole value is
+	 * that it sums exactly — a credit that over-reverses by one paisa is a balance that never
+	 * reconciles again.
+	 *
+	 * <p><b>A zero or negative amount credits nothing.</b> A one-paisa return on a large order
+	 * reverses zero commission. That is arithmetically correct and it is recorded as no entry at
+	 * all, because a zero-amount ledger row is noise in a reconciliation.
+	 *
+	 * <p>Idempotent on {@code originalIdempotencyKey} plus {@code amount} and a caller-supplied
+	 * {@code refundReference}, so re-running the same refund cannot credit twice — the failure that
+	 * a retrying refund endpoint actually has.
+	 *
+	 * @param fractionNumerator   the returned amount
+	 * @param fractionDenominator the whole order's refundable amount; must be positive
+	 * @return the credit, or empty when there was nothing to reverse or the portion rounds to zero
+	 */
+	@Transactional(isolation = Isolation.SERIALIZABLE)
+	public Optional<WalletLedgerEntry> reverseDebitPartially(UUID shopId, String originalIdempotencyKey,
+			long fractionNumerator, long fractionDenominator, String refundReference, String description,
+			UUID orderId, UUID actorUserId) {
+
+		if (fractionNumerator < 0) {
+			throw new IllegalArgumentException(
+					"A refund cannot be negative, not " + fractionNumerator + ".");
+		}
+		if (fractionDenominator <= 0) {
+			throw new IllegalArgumentException(
+					"The refundable total must be positive to take a fraction of it, not "
+							+ fractionDenominator + ".");
+		}
+		if (fractionNumerator > fractionDenominator) {
+			throw new IllegalArgumentException(
+					"A refund of " + fractionNumerator + " against a total of " + fractionDenominator
+							+ " would refund more than the customer paid.");
+		}
+
+		Optional<WalletLedgerEntry> original = ledgerRepository.findByIdempotencyKey(originalIdempotencyKey);
+		if (original.isEmpty()) {
+			log.info("No debit {} to reverse for order {}", originalIdempotencyKey, orderId);
+			return Optional.empty();
+		}
+
+		WalletLedgerEntry debit = original.get();
+
+		// Floor, not round. See the note above: a credit that over-reverses by one paisa is a
+		// balance that never reconciles again.
+		long portion = Math.floorDiv(debit.getAmountMinor() * fractionNumerator, fractionDenominator);
+
+		if (portion <= 0) {
+			log.info("Partial reversal of {} on order {} rounds to zero; nothing credited",
+					originalIdempotencyKey, orderId);
+			return Optional.empty();
+		}
+
+		// Keyed on the refund as well as the debit, so two *different* partial refunds of the same
+		// order each get their own entry and neither is mistaken for the other.
+		String reversalKey = "reversal:" + originalIdempotencyKey + ":" + refundReference;
+
+		Optional<WalletLedgerEntry> already = ledgerRepository.findByIdempotencyKey(reversalKey);
+		if (already.isPresent()) {
+			return already;
+		}
+
+		balanceOf(shopId);
+		long current = lockedBalance(shopId);
+
+		WalletLedgerEntry reversal = WalletLedgerEntry.builder()
+				.shopId(shopId)
+				.entryType(EntryType.COMMISSION_REVERSAL)
+				.direction(Direction.CREDIT)
+				.amountMinor(portion)
+				.balanceAfterMinor(current + portion)
+				.orderId(orderId != null ? orderId : debit.getOrderId())
+				.reversalOf(debit.getId())
+				.idempotencyKey(reversalKey)
+				.description(description)
+				.actorUserId(actorUserId)
+				.build();
+
+		return Optional.of(persist(shopId, reversal));
+	}
+
+	/**
 	 * Credits back a previous debit, for a cancellation or refund.
 	 *
 	 * <p>Idempotent on the original debit's key with a {@code "reversal:"} prefix, so cancelling

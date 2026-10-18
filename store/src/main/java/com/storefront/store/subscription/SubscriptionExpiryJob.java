@@ -38,6 +38,7 @@ public class SubscriptionExpiryJob {
 	private final ShopSubscriptionRepository subscriptions;
 	private final ShopEntitlementRepository entitlements;
 	private final SubscriptionService subscriptionService;
+	private final com.storefront.store.audit.AuditTrail audit;
 
 	/**
 	 * Runs hourly.
@@ -66,6 +67,7 @@ public class SubscriptionExpiryJob {
 			try {
 				if (expireOne(subscription.getId(), now)) {
 					closed++;
+					noteExpiry(subscription);
 				}
 			} catch (RuntimeException failure) {
 				// Logged and skipped. A single shop that cannot be closed must not prevent the rest
@@ -96,6 +98,23 @@ public class SubscriptionExpiryJob {
 	}
 
 	/**
+	 * Records that the scheduler closed a subscription.
+	 *
+	 * <p><b>With no human actor, deliberately.</b> A subscription can be revoked with nobody having
+	 * touched it, and an investigator looking at a shop that lost its commission needs to read "the
+	 * hourly sweep closed it" off the log rather than infer it from the absence of a row.
+	 */
+	private void noteExpiry(ShopSubscription subscription) {
+		audit.recordSystem(
+				com.storefront.store.audit.AuditAction.SUBSCRIPTION_EXPIRED,
+				"ShopSubscription",
+				subscription.getId(),
+				"Expired " + subscription.getPlan().getName() + " for shop "
+						+ subscription.getShopId() + "; back to the free tier",
+				com.storefront.store.audit.AuditTrail.field("status", subscription.getStatus()));
+	}
+
+	/**
 	 * Drops entitlement rows whose window has closed.
 	 *
 	 * <p>Separate from the subscription sweep, and safe to run more often: it touches only rows that
@@ -122,6 +141,7 @@ public class SubscriptionExpiryJob {
 				ShopSubscription.Status.ACTIVE, now)) {
 			if (expireOne(subscription.getId(), now)) {
 				closed++;
+				noteExpiry(subscription);
 			}
 		}
 		return closed;

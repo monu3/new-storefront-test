@@ -3,6 +3,8 @@ import { useQuery } from '@tanstack/react-query';
 import { useSearchParams } from 'react-router-dom';
 import { EllipsisVertical, Eye, Pencil, Plus, Search, Share2, SlidersHorizontal } from 'lucide-react';
 
+import { ShareSheet } from '../components/share-sheet';
+
 import { authorizedFetch } from '@store-app/auth';
 import type { AuthAdapter } from '@store-app/auth';
 import { Button, Checkbox, DataTable, DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger, Input, Switch } from '@store-app/ui';
@@ -51,6 +53,8 @@ export function ShopProducts({ auth }: { auth: AuthAdapter }) {
   const [params, setParams] = useSearchParams();
   const [search, setSearch] = useState(params.get('q') ?? '');
   const [selected, setSelected] = useState<Set<string>>(new Set());
+  /** The product whose share sheet is open, or null. */
+  const [sharing, setSharing] = useState<string | null>(null);
 
   const status = params.get('status');
   const page = Number(params.get('page') ?? 0);
@@ -187,13 +191,17 @@ export function ShopProducts({ auth }: { auth: AuthAdapter }) {
             >
               <Pencil className="size-4" aria-hidden />
             </a>
-            <a
-              href={`/s/${'your-shop'}/${row.slug}`}
+            {/* Opens the real share sheet. This used to be an anchor to
+                `/s/your-shop/<slug>` -- a literal placeholder string, so it linked nowhere useful
+                and looked like it worked. */}
+            <button
+              type="button"
+              onClick={() => setSharing(row.id)}
               aria-label={`Share ${row.name}`}
               className="rounded p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground"
             >
               <Share2 className="size-4" aria-hidden />
-            </a>
+            </button>
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <button
@@ -297,6 +305,17 @@ export function ShopProducts({ auth }: { auth: AuthAdapter }) {
           </DropdownMenuContent>
         </DropdownMenu>
       </div>
+
+      {sharing ? (
+        <ShareSheet
+          auth={auth}
+          productId={sharing}
+          productName={
+            rows?.find((row: { id: string; name: string }) => row.id === sharing)?.name ?? 'product'
+          }
+          onClose={() => setSharing(null)}
+        />
+      ) : null}
 
       {selected.size > 0 ? (
         <div className="flex items-center gap-3 rounded-lg border bg-primary/5 px-4 py-2 text-sm">

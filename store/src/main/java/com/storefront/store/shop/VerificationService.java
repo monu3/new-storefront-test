@@ -26,6 +26,7 @@ import lombok.extern.slf4j.Slf4j;
 public class VerificationService {
 
 	private final ShopRepository shops;
+	private final com.storefront.store.audit.AuditTrail audit;
 
 	/**
 	 * Submits a shop for review.
@@ -46,11 +47,29 @@ public class VerificationService {
 		return saved;
 	}
 
-	/** Admin approval. The shop becomes visible in the gallery. */
+	/**
+	 * Admin approval. The shop becomes visible in the gallery.
+	 *
+	 * <p><b>Audited here rather than in the controller.</b> A service is the only layer every caller
+	 * passes through. Recording in {@code AdminShopController} would make the log complete for HTTP
+	 * and silent for anything else, so Phase 7's exit criterion -- "every privileged action lands in
+	 * the audit log" -- would be true of the admin UI and false of the platform.
+	 *
+	 * <p>It also cannot be bypassed by forgetting: there is no second path to this state change.
+	 */
 	@Transactional
 	public Shop verify(Shop shop) {
+		Shop.Status before = shop.getStatus();
+
 		shop.verify();
 		Shop saved = shops.saveAndFlush(shop);
+
+		audit.record(com.storefront.store.audit.AuditAction.SHOP_VERIFY, "Shop", saved.getId(),
+				"Verified " + saved.getName() + ", making it visible in the gallery",
+				null,
+				com.storefront.store.audit.AuditTrail.field("status", before),
+				com.storefront.store.audit.AuditTrail.field("status", saved.getStatus()));
+
 		log.info("Shop {} verified and published at /s/{}", saved.getId(), saved.getSlug());
 		return saved;
 	}
@@ -58,17 +77,42 @@ public class VerificationService {
 	/** Admin rejection, with a reason the owner can act on. */
 	@Transactional
 	public Shop reject(Shop shop, String reason) {
+		Shop.Status before = shop.getStatus();
+
 		shop.reject(reason);
 		Shop saved = shops.saveAndFlush(shop);
+
+		audit.record(com.storefront.store.audit.AuditAction.SHOP_REJECT, "Shop", saved.getId(),
+				"Rejected " + saved.getName(), reason,
+				com.storefront.store.audit.AuditTrail.field("status", before),
+				com.storefront.store.audit.AuditTrail.field("status", saved.getStatus()));
+
 		log.info("Shop {} rejected: {}", saved.getId(), reason);
 		return saved;
 	}
 
-	/** Administrative suspension, e.g. for fraud. Hides the shop without deleting its data. */
+	/**
+	 * Administrative suspension, e.g. for fraud. Hides the shop without deleting its data.
+	 *
+	 * <p><b>The reason is required, and checked here rather than at the endpoint</b>, because "suspend
+	 * without a reason" is a mistake made in every caller rather than one, and the rule belongs to
+	 * the action rather than to the route.
+	 */
 	@Transactional
 	public Shop suspend(Shop shop, String reason) {
+		com.storefront.store.audit.AuditTrail.requireReason(
+				com.storefront.store.audit.AuditAction.SHOP_SUSPEND, reason);
+
+		Shop.Status before = shop.getStatus();
+
 		shop.suspend(reason);
 		Shop saved = shops.saveAndFlush(shop);
+
+		audit.record(com.storefront.store.audit.AuditAction.SHOP_SUSPEND, "Shop", saved.getId(),
+				"Suspended " + saved.getName(), reason,
+				com.storefront.store.audit.AuditTrail.field("status", before),
+				com.storefront.store.audit.AuditTrail.field("status", saved.getStatus()));
+
 		log.info("Shop {} suspended: {}", saved.getId(), reason);
 		return saved;
 	}

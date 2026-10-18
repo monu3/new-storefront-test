@@ -49,14 +49,30 @@ public class IdentitySyncService {
 		}
 
 		AppUser.Realm realm = realmFromIssuer(jwt);
+		String authorities = authorities(jwt);
+
 		AppUser existing = users.findByKeycloakSub(subject).orElse(null);
 		if (existing != null) {
 			existing.recordLogin();
+
+			// Roles are stamped here, on the one path every authenticated request takes.
+			//
+			// <p>So a role change takes effect on the holder's next request rather than at some
+			// cleanup job nobody remembers to run -- and so the admin console can answer "is this
+			// account an admin?" without calling Keycloak, which is what lets the guard against an
+			// admin suspending another admin exist at all.
+			//
+			// <p>Only written when something actually changed: writing unconditionally would mark
+			// every account dirty on every page view.
+			if (existing.syncRoles(authorities)) {
+				users.saveAndFlush(existing);
+			}
 			return existing;
 		}
 
 		AppUser created = new AppUser(realm, subject, email(jwt), name(jwt));
 		created.recordLogin();
+		created.syncRoles(authorities);
 
 		try {
 			users.saveAndFlush(created);
@@ -108,6 +124,32 @@ public class IdentitySyncService {
 	 * configured in one place and this in another, and a future change to one should not silently
 	 * weaken the other.
 	 */
+	/**
+	 * The authorities from the token, as a comma-joined string.
+	 *
+	 * <p>Read from {@code realm_access}, which is where Keycloak puts realm roles, and prefixed with
+	 * {@code ROLE_} to match Spring's authority naming — so the stored string is the same thing the
+	 * security context holds, rather than a second vocabulary that has to be translated.
+	 *
+	 * <p>Returns null for a token with no realm roles, which is stored as null rather than an empty
+	 * string so "never signed in" and "signed in with no roles" stay distinguishable.
+	 */
+	private String authorities(Jwt jwt) {
+		Object claim = jwt.getClaim("realm_access");
+		if (!(claim instanceof java.util.Map<?, ?> realmAccess)) {
+			return null;
+		}
+
+		String joined = realmAccess.values().stream()
+				.filter(java.util.List.class::isInstance)
+				.flatMap(value -> ((java.util.List<?>) value).stream().map(String::valueOf))
+				.map(role -> role.startsWith("ROLE_") ? role : "ROLE_" + role)
+				.sorted()
+				.collect(java.util.stream.Collectors.joining(","));
+
+		return joined.isEmpty() ? null : joined;
+	}
+
 	private AppUser.Realm realmFromIssuer(Jwt jwt) {
 		String issuer = jwt.getIssuer() == null ? null : jwt.getIssuer().toString();
 

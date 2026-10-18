@@ -77,6 +77,29 @@ public class ShopOrder extends BaseEntity {
 		REFUNDED
 	}
 
+	/**
+	 * How the customer gets their goods (Phase 8).
+	 *
+	 * <p><b>An explicit method, not "no address means pickup".</b> Those are different facts: a
+	 * delivery order with a missing address is a data-entry mistake, and inferring pickup from the
+	 * absence makes the mistake look like a customer choice -- on a screen where nobody can tell
+	 * them apart.
+	 */
+	public enum FulfilmentMethod {
+		/** Sent to an address. The default, because it is what almost every order is. */
+		DELIVERY,
+		/** Collected by the customer. Carries a pickup note instead of an address. */
+		PICKUP
+	}
+
+	@Enumerated(EnumType.STRING)
+	@Column(name = "fulfilment_method", nullable = false)
+	private FulfilmentMethod fulfilmentMethod = FulfilmentMethod.DELIVERY;
+
+	/** Where or when to collect. Null for a delivery order. */
+	@Column(name = "pickup_note", columnDefinition = "text")
+	private String pickupNote;
+
 	public enum PaymentStatus {
 		PENDING, PAID, FAILED, REFUNDED, PARTIALLY_REFUNDED
 	}
@@ -257,6 +280,40 @@ public class ShopOrder extends BaseEntity {
 	 * <p>Called once, at accept. The values are stored rather than recomputed later, so a change
 	 * to the platform rate cannot alter what a shop was charged for an order placed months ago.
 	 */
+	/**
+	 * Switches a not-yet-accepted order to collection.
+	 *
+	 * <p><b>Only before acceptance.</b> Once a shop has accepted an order it has taken the commission
+	 * and reserved the stock, and "actually this one is a pickup" is a different conversation from
+	 * "cancel this and place it again" -- the first is free, the second is not.
+	 *
+	 * <p>Shipping is zeroed and the total recomputed, not patched. A pickup order with a shipping
+	 * charge left in the total is a charge for a journey nobody makes.
+	 */
+	public void switchToPickup(String note) {
+		if (status != Status.PENDING) {
+			throw new IllegalStateException(
+					"This order is " + status + ", not PENDING. After acceptance the shop has taken "
+							+ "commission on it, and changing how it is delivered is a different "
+							+ "decision from cancelling it.");
+		}
+		if (note == null || note.isBlank()) {
+			throw new IllegalArgumentException(
+					"A pickup order needs a note saying where or when to collect. Without one the "
+							+ "customer arrives and nobody knows what they are collecting from.");
+		}
+
+		this.fulfilmentMethod = FulfilmentMethod.PICKUP;
+		this.pickupNote = note.trim();
+		this.shippingMinor = 0;
+		this.totalMinor = subtotalMinor - discountMinor + taxMinor + shippingMinor;
+	}
+
+	public boolean isPickup() {
+		return fulfilmentMethod == FulfilmentMethod.PICKUP;
+	}
+
+
 	void freezeCommission(int rateBp, long amountMinor, boolean waived) {
 		this.commissionRateBp = rateBp;
 		this.commissionMinor = amountMinor;

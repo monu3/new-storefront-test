@@ -68,6 +68,14 @@ export interface TrackingStep {
 }
 
 export interface OrderLine {
+  /**
+   * The order line's own id.
+   *
+   * <p>Added in Phase 8: a return request names the lines it covers by id. Without it the customer
+   * could only request a return on the whole order, which is the one thing a return workflow is
+   * explicitly not for -- a partial return is the common case.
+   */
+  id: string;
   productName: string;
   variantName: string | null;
   quantity: number;
