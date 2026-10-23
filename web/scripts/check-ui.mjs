@@ -85,8 +85,11 @@ const targets = [
     ],
   },
   {
+    // The gallery moved to /shops in Phase 8.5; `/` is now the landing page. Leaving this pointed
+    // at `/` reported a working site as broken, which is the kind of false alarm that trains you
+    // to stop reading the output.
     name: 'storefront: gallery',
-    url: 'http://localhost:3000/',
+    url: 'http://localhost:3000/shops',
     expect: [
       ['shop links rendered', (p) => p.locator('a[href^="/s/"]').count().then((n) => n > 0)],
       ['stylesheet actually applied', (p) =>

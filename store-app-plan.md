@@ -1570,6 +1570,63 @@ Return and refund workflow with commission reversal (D14) · partial refunds · 
 
 ---
 
+### Phase 8.5 — Registration, Onboarding and the Landing Page — COMPLETE
+
+Until 18 Oct 2026 the platform had **two test accounts and no way to get a third**. A shop owner
+existed only if an administrator made one by hand in the Keycloak console, and a customer likewise.
+`POST /api/v1/shop/signup` had been written and nothing called it.
+
+**Three decisions, taken 18 Oct 2026:**
+
+1. **`ROLE_SHOP` is granted by a Keycloak default role on the existing `store-app-console` client**,
+   not by a third client and not by the app calling the Admin API. Self-registration through that
+   client therefore grants the role automatically.
+2. **A dedicated landing page** at the storefront root, with the gallery moving to `/shops`.
+3. **Two-step shop onboarding** — account first, then shop — landing in the dashboard rather than in
+   a wizard.
+
+#### The two things that are not alternatives
+
+| | Means | Where it lives |
+|---|---|---|
+| `ROLE_SHOP` | this person may open the shop console | Keycloak, account-level, automatic |
+| Shop verification | this shop may actually trade | **already built** — `PENDING_REVIEW` → `VERIFIED` |
+
+An admin approving a shop in this console gives them a shop; it does not give them a Keycloak role.
+Conflating the two is what made this look like it needed the Admin API.
+
+#### Why the default-role route and not the Admin API
+
+The Admin API would work with no Keycloak configuration at all, and it was rejected because it puts
+Keycloak admin credentials in this application's config and turns role assignment into code that
+can fail at signup — where the failure mode is a person who registered and cannot get in, with
+nothing in the logs saying why. A Keycloak default role fails loudly and early instead: if it is not
+set, the new owner gets a console that refuses every screen, and the fix is one setting.
+
+The trade-off is accepted: **anyone who self-registers through the console client gets a shop
+console.** That is not as open as it sounds, because their shop is `DRAFT` and cannot trade until an
+administrator verifies it — which is the same gate every other shop goes through.
+
+#### Work
+
+- `V18` — `shop.profile_completed_at`, so "has this owner finished signing up" is a fact rather than
+  a guess from the shop being called "My shop"
+- console `/shop/start` — name, vertical, description; calls the existing `POST /api/v1/shop/signup`
+- console `/shop` — an onboarding guard that sends an unfinished owner to `/shop/start`
+- registration links on both login pages, pointing at Keycloak's registration endpoint
+- storefront landing page at `/`, gallery to `/shops`
+
+#### Keycloak configuration (done once, by hand)
+
+On the **`ops`** realm: Clients → `store-app-console` → *Client Roles* → create `SHOP` if it is not
+already there → *Default Client Roles* → add `SHOP`. On the **`customers`** realm: Clients →
+`store-app-customer-web` → *Client Roles* → `CUSTOMER` → *Default Client Roles* → add `CUSTOMER`.
+
+Without this, a person who registers can sign in and is refused every screen, because the token
+carries no role the backend recognises.
+
+---
+
 ### Phase 9 — Polish and Hardening (ongoing)
 
 Paid custom CSS with a strict sanitizer (D15) · follower feed and rewards (D13) · custom domains · multi-warehouse stock · product comparison · recommendations · Nepali localization completion.
@@ -5175,7 +5232,7 @@ rather than like a bug.
 ### Status
 
 ```
-backend  6,079 tests, 0 failures, 0 errors, 0 skipped   (+63 in Phase 8)
+backend  6,083 tests, 0 failures, 0 errors, 0 skipped   (+67 since Phase 7)
 
 Phase 7 COMPLETE — foundation, admin features, and ten admin screens
   V14  audit_log (replaces the Phase 1 declaration, with a guard)
@@ -5425,3 +5482,268 @@ working share button, which is exactly why nothing had caught it.
   token), not by inserting rows, so the state is one the platform would actually have produced.
 - Guest carts are recorded but never emailed — there is nobody to email. The sweep skips them
   deliberately rather than marking them reminded, so they are not silently consumed.
+
+## Appendix AH — Phase 8.5: letting people in, and the one bug that locked everybody out
+
+Until this phase the platform had two accounts and no way to get a third. `POST /api/v1/shop/signup`
+had been written in Phase 1 with nothing calling it, and the shop a new owner received was a
+placeholder called "My shop" of type GROCERY.
+
+### What changed
+
+- **`registrationUrl(config)`** in `@store-app/auth` — one builder, both apps. Keycloak owns the
+  form; reimplementing password policy and email verification here would mean reimplementing all of
+  it, worse. The `client_id` it carries is what puts the realm's default client role on the account.
+- **Registration links** on the console login ("Start a new shop", ops realm) and the storefront
+  login ("Create an account", customers realm).
+- **`/shop/start`** — shop name, vertical, description, optional web address. It calls the endpoint
+  that already existed.
+- **An onboarding guard in the app shell** that sends an unfinished owner to `/shop/start`.
+- **The storefront landing page** at `/`, with the gallery moved to `/shops`.
+
+### The bug: every existing shop owner was locked out
+
+The guard reads `shop.profile_completed_at`. A new column, null for every row that predates it —
+which is every existing shop. So the guard read a verified, trading shop as "has never signed up" and
+redirected its owner to the sign-up form, from which they could not get back to their products,
+orders or wallet.
+
+**The screen rendered perfectly, for the wrong person.** No test caught it, because the guard is
+client-side and the placeholder shop is correct. It was caught by running `check-phase8.mjs` after
+building the guard and noticing that Phase 8's assertions had started failing: "products offer a
+share action — 0 product(s)".
+
+That is the whole argument for running the *previous* phase's checks after a change that was not
+supposed to touch them. The failure surfaced as an unrelated feature going quiet.
+
+The fix is a backfill in `V18`, and it is the interesting part:
+
+```sql
+UPDATE shop SET profile_completed_at = now()
+WHERE profile_completed_at IS NULL
+  AND (name IS DISTINCT FROM 'My shop' OR status <> 'DRAFT');
+```
+
+A blanket stamp would have been wrong for the placeholders, which really are unfinished. Comparing
+the placeholder name looks fragile — and here it is not, because this is a **one-shot** judgement,
+made once, about which rows predate a feature that did not exist. "Did this row come from the
+provisioner or from a person" is precisely what the auto-generated name records, and only at the
+instant the migration runs.
+
+**At runtime the string is never compared.** The guard reads the timestamp, which is why the fragile
+approach can be used once without becoming load-bearing. `ShopOnboardingIT` pins that separation:
+a shop genuinely named "My shop" is still not complete, and a signed-up shop stays complete when
+signed up again — because re-signing-up is not a reset, and a fresh timestamp would re-open the
+wizard for a shop whose URL is already in printed material.
+
+### A white button on the front page
+
+The landing page's primary calls to action used `bg-neutral text-neutral-foreground`. This project
+defines no `neutral` token, so the class produced no background at all and the front page's main
+button rendered white on white.
+
+Every automated check passed: the link existed, the text was there, the element was clickable. It
+was found by looking at a screenshot, which is the only one of these checks that would have noticed.
+
+Fixed to `bg-foreground text-background` — the theme's own pair, so it is correct in light and dark
+and follows whatever the tokens say rather than a colour picked once.
+
+### Verification
+
+| | |
+|---|---|
+| backend | 6,083 tests, 0 failures, 0 errors, 0 skipped |
+| frontend | 10/10 typecheck; console and storefront build |
+| browser | `check-phase85.mjs` — landing page, gallery at /shops, both registration links, the wizard, the guard. **PHASE 8.5 UI OK** |
+| regression | phase 6, 7 and 8 checks re-run after the gallery moved — this is how the lockout was found |
+
+### Still needed from you
+
+The Keycloak default-role configuration in the plan's Phase 8.5 section. Without it a person who
+registers can sign in and is refused every screen, because their token carries no role the backend
+recognises — which fails loudly and immediately rather than quietly, and is the intended failure
+mode.
+
+## Appendix AI — Checking the registration, and a 403 that had been hiding since Phase 0
+
+Asked to check the Keycloak configuration after the default client roles were set. The answer was
+that a different switch was still off.
+
+### Realm registration is off on both realms
+
+```
+ops         400  Registration not allowed
+customers   400  Registration not allowed
+```
+
+A realm switch, not a client one: **Realm settings → Login → User registration**. Both switches are
+needed and neither substitutes for the other — the realm switch permits registration at all, the
+default client role is what makes the new account able to open a console.
+
+The trap here is worth naming. The OIDC discovery document advertises a `registration_endpoint` on
+both realms, which reads as "registration is on". It is not the same endpoint and it is not evidence
+of anything: it is the **Dynamic Client Registration** API, a different facility entirely. The
+browser registration form lives at `/protocol/openid-connect/registrations` and is refused before the
+client is ever consulted. `registrationUrl()` in `@store-app/auth` already warned about this.
+
+### `check-registration.mjs`
+
+Drives both journeys end to end with brand-new accounts: register through Keycloak's form, land on
+`ROLE_SHOP` in the token, reach the wizard, complete onboarding, reach a dashboard — and the
+customer equivalent.
+
+It **prints `NOT RUN` and exits 0 while registration is off**, and says so as a configuration state
+rather than a failure. Its first version printed `REGISTRATION OK` after having created nothing,
+which is the exact false pass this project has been bitten by before; it now tracks how many
+journeys actually ran and refuses to claim a pass when the answer is zero.
+
+It creates real Keycloak accounts and cannot delete them — there is no admin credential here — so it
+prefixes them `phase85-` and prints them for cleanup rather than pretending otherwise.
+
+### The 403 that had been hiding since Phase 0
+
+Chasing this surfaced something older. The console's shop queries were gated on `roles.includes(SHOP)`
+— but the platform's own administrator account holds **both** `SHOP` and `ADMIN` and owns no shop, so
+every admin screen fired a shop request that could only 403.
+
+`AppShell`'s code has carried a comment since Phase 0 warning that exactly this noise *"hides a real
+403 the day one appears"*, and the gate never fixed it, because it asked the wrong question. Not
+"does this account have a shop" — "does it have the role". Those have different answers, and the
+administrator account is the proof.
+
+**Fixed at both ends:**
+
+- `GET /api/v1/shop/me` now answers **200 with `owned: false`** for a caller who holds `SHOP` and
+  owns nothing, because that is a real state — a fresh owner before provisioning, and permanently,
+  every administrator who also holds the shop role.
+- It still answers **404 for a caller without the SHOP role**, which an existing test pins and which
+  must not be weakened: "200, you own nothing" turns a shop endpoint into a public *no*, revealing
+  which accounts have shops.
+
+A first attempt made it 200 for everybody and broke `customerCannotReachShopDashboard`. That was me
+weakening a deliberate security boundary for convenience, and the test caught it in one run. The
+distinction worth keeping is the **role**, not the existence of a shop.
+
+The console now gates on `owned`, so an administrator owning nothing fires no shop requests at all.
+
+### Two check scripts that reported working code as broken
+
+Both were my error and both are worth recording because a check that cries wolf is a check nobody
+runs.
+
+- `check-ui.mjs` looked for the gallery at `/`. It moved to `/shops` in Phase 8.5. The site was fine.
+- `check-phase85.mjs` asserted the onboarding wizard was showing. The account it signs in as had
+  **already signed up** — so the wizard correctly said so, and the check called that a failure. It
+  now asserts one of the two correct states and reports which.
+
+## Appendix AJ — Registration actually working, and the bug it was hiding
+
+The realm switches were on. The next question was whether a person who has never been here before
+can get in. The answer was no, and finding out why took three separate defects.
+
+### The registration links never worked, and the check could not tell
+
+Both realms require **PKCE**. A hand-assembled registration URL carries no `code_challenge`, so
+Keycloak refuses it:
+
+```
+302 → http://localhost:5173?error=invalid_request
+        &error_description=Missing parameter: code_challenge_method
+```
+
+The browser lands back on the login page carrying an error nothing displays. The link looks fine in
+the source, and the check asserted it was fine — `check-phase85.mjs` read the anchor's `href` and
+confirmed it contained the right realm and client id. **It asserted the shape of a URL that fails.**
+
+A verifier cannot be minted server-side and handed to the browser: the app has to present the same
+one at the token exchange. So `registrationUrl(config)` is gone and replaced by `auth.register()`,
+which delegates to `keycloak-js` — generate, store, challenge, redeem.
+
+Three call sites moved with it:
+
+| file | change |
+|---|---|
+| `packages/auth/src/adapter.ts` | `register(returnTo?)` on `AuthAdapter` |
+| `apps/console/src/pages/login.tsx` | "Start a new shop" is now a button |
+| `apps/customer/src/app/login/page.tsx` | "Create an account" is now a button |
+| `apps/customer/src/app/page.tsx` | landing page (a server component) uses the new `RegisterButton` client component |
+
+The landing page is statically generated and has no JavaScript budget to spare, so the button lives
+in `components/register-button.tsx` and the page keeps its HTML-first shape.
+
+### The platform could onboard exactly one shop owner, ever
+
+Registering the first real second owner produced a **500 from `/api/v1/shop/me`**:
+
+```
+ERROR: duplicate key value violates unique constraint "shop_slug_key"
+  at IdentitySyncService.provisionShop(IdentitySyncService.java:108)
+```
+
+The chain:
+
+- `Shop`'s constructor derives its slug from the name: `SlugGenerator.from(name, this.id)`
+- `SlugGenerator.from` uses the id **only when the name folds to something blank**
+- `provisionShop` names every draft shop the constant `"My shop"`
+- `shop.slug` is unique
+
+So every provisionally-created shop was assigned `my-shop`. The first owner got one. **Every owner
+after that met a unique-constraint violation on their first authenticated request**, before doing
+anything at all — no shop, no wizard, a 500.
+
+`ShopService.signUp` has de-duplicated slugs this whole time. `provisionShop` bypassed it by saving
+directly. Fixed at the shared layer: `ShopService.allocateUniqueSlug(base)` is now public and
+provisioning uses it, so the two paths cannot disagree. The dev database shows the result —
+`my-shop`, `my-shop-2`, `my-shop-3`.
+
+**No existing test could have caught this.** Every test that creates a shop goes through
+`signUp`. Provisioning runs only on a brand-new Keycloak account and had been executed exactly once
+in this project's life, by the owner who had been here since Phase 1. A single execution cannot find
+a bug that needs two. `IdentitySyncServiceIT` now has a `TwoOwners` block that provisions two owners
+and pins the slugs apart; it was confirmed to fail with the fix reverted.
+
+### `/shop/me` answers a different question now
+
+Followed from this. `admin.test` holds **both** `SHOP` and `ADMIN` and owns no shop, so the console's
+`roles.includes(SHOP)` gate passed and every admin screen fired a shop request that could only 403 —
+the noise `AppShell`'s comment has warned about since Phase 0.
+
+- `GET /api/v1/shop/me` → **200 `{owned: false}`** for a caller holding `SHOP` and owning nothing.
+- It still returns **404 for a caller without the SHOP role.** An existing test pins this and it must
+  not be weakened: "200, you own nothing" turns a shop endpoint into a public *no*, revealing which
+  accounts have shops.
+
+The console now gates on `owned`.
+
+### Keycloak 26 registration form
+
+Worth writing down, because the selectors for an older Keycloak fail *silently*:
+
+- submit is `<input type="submit" value="Register">` with **no id**
+- the form is `#kc-register-form`
+- both realms run **email-as-username**, so there is no `#username` field
+- PatternFly markup throughout, not the older freeform template
+
+### Checks
+
+- `check-registration.mjs` no longer builds its own URL — it **clicks the control**, so it can only
+  fail the way a person would. Creates two throwaway `phase85-*` accounts per run.
+- `check-phase85.mjs` asserts Keycloak will *accept* the URL: realm, client id, `response_type=code`
+  and a `code_challenge_method=S256`. The PKCE assertion is the one that cannot be satisfied by a
+  broken link.
+
+### Accounts and data this created
+
+Nothing here can be deleted from Keycloak — there is no admin credential in this project — so the
+accounts are listed for the user to remove:
+
+```
+phase85-owner-400912@example.test   registered before the slug fix; no shop
+phase85-owner-728968@example.test   full journey, shop "my-shop-2"
+phase85-owner-538544@example.test   full journey, shop "my-shop-3"
+phase85-buyer-728968@example.test   full journey
+probe-cust-*@example.test           one manual probe
+password for all: iloveu-Phase85!
+```
+
+Two DRAFT shops named "Phase Eighty Five Books" remain in the dev database.

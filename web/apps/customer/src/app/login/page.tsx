@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 
 import { Button, Card, CardContent } from '@store-app/ui';
+import { RegisterButton } from '../../components/register-button';
 
 import { auth } from '../../lib/auth';
 
@@ -79,6 +80,14 @@ export default function LoginPage() {
             You do not need an account to order — guest checkout is available on every shop. Signing
             in adds order history, saved addresses and a wishlist.
           </p>
+
+          {/* Registration is Keycloak's own form, and going through the adapter is what makes it
+              work: the realm requires PKCE, so a link with no code_challenge is bounced straight
+              back here with an error rather than opening a form. The client id it carries is also
+              what puts the customers realm's default client role on the new account. */}
+          <div className="mt-4 flex justify-center border-t pt-4">
+            <RegisterButton variant="default" />
+          </div>
         </CardContent>
       </Card>
     </div>

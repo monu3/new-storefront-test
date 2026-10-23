@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 
 import { useQuery } from '@tanstack/react-query';
+import { Navigate } from 'react-router-dom';
 import { Link, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import {
   Bell,
@@ -77,6 +78,55 @@ export function AppShell({ auth }: { auth: AuthAdapter }) {
     };
   }, [auth, navigate]);
 
+  /**
+   * Whether this account owns a shop, and whether it has finished signing up (Phase 8.5).
+   *
+   * <p><b>The gate is ownership, not the SHOP role.</b> Those are different questions and the token
+   * answers only the second. An administrator who also holds SHOP — which is a perfectly normal
+   * configuration, and is what the platform's own administrator account looks like — passes a role
+   * check and owns nothing, so a role-gated query fires for a shop that does not exist and every
+   * admin screen carries a background 403.
+   *
+   * <p>That noise is worse than it sounds: a 403 on every screen is exactly the thing that hides a
+   * real 403 the day one appears. The project's code has warned about it since Phase 0 without ever
+   * fixing it, because the gate kept asking the wrong question.
+   *
+   * <p>{@code /api/v1/shop/me} answers 200 either way and says which it is, so this is one request
+   * that is true for an owner, for a fresh owner, and for an administrator.
+   */
+  const isShopRoleHolder = user.session.roles.includes(APP_ROLE.SHOP);
+
+  const { data: shopMe } = useQuery({
+    queryKey: ['shop', 'me'],
+    queryFn: async () => {
+      const response = await authorizedFetch(auth, '/api/v1/shop/me');
+      if (!response.ok) throw new Error(await response.text());
+      return (await response.json()) as { owned: boolean; profileComplete: boolean };
+    },
+    enabled: isShopRoleHolder,
+    staleTime: 60_000,
+  });
+
+  /** True when there is a shop behind the account, whatever the roles say. */
+  const ownsShop = shopMe?.owned === true;
+
+  /**
+   * Whether to bounce this owner to the sign-up step.
+   *
+   * <p><b>Only on shop routes, and never onto the sign-up page itself.</b> An owner who has just
+   * signed up must not be redirected straight back to the form they submitted — which is what a
+   * guard that does not exclude its own target does, forever, because the query is cached.
+   *
+   * <p>Unknown is treated as "not yet", so the guard holds while the query is in flight. The cost
+   * is a redirect that resolves in a few hundred milliseconds; the benefit is never showing a
+   * dashboard for a shop whose name is still "My shop".
+   */
+  const needsOnboarding =
+    isShopRoleHolder &&
+    shopMe?.owned === true &&
+    shopMe.profileComplete === false &&
+    !location.pathname.startsWith('/shop/start');
+
   const { data: stats } = useQuery({
     queryKey: ['shop-dashboard'],
     queryFn: async () => {
@@ -97,7 +147,9 @@ export function AppShell({ auth }: { auth: AuthAdapter }) {
     //
     // <p>It is worth fixing rather than tolerating: a 403 in the console on every admin screen is
     // background noise that will hide a real 403 the day one appears.
-    enabled: user.session.authenticated && user.session.roles.includes(APP_ROLE.SHOP),
+    // Gate on owning a shop, not on holding the role -- see the note above. `shopMe` is still
+    // loading on the first render, so this starts false and enables once the answer arrives.
+    enabled: user.session.authenticated && ownsShop,
     staleTime: 60_000,
   });
 
@@ -109,6 +161,15 @@ export function AppShell({ auth }: { auth: AuthAdapter }) {
     );
   }
   if (!user.session.authenticated) return <p className="p-8">Redirecting to sign in…</p>;
+
+  // ------------------------------------------------------------- onboarding guard
+  //
+  // An owner who has not finished signing up sees this instead of the whole console. Returned
+  // before anything renders rather than as a fragment around it, so there is no frame of a sidebar
+  // for a dashboard they are not ready for.
+  if (needsOnboarding) {
+    return <Navigate to="/shop/start" replace />;
+  }
 
   const isAdmin = user.session.roles.includes(APP_ROLE.ADMIN);
   const nav = isAdmin ? ADMIN_NAV : SHOP_NAV;

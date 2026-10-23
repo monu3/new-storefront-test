@@ -33,6 +33,7 @@ import { ShopAudience } from './pages/shop-audience';
 import { ShopMediaLibrary } from './pages/shop-media';
 import { ShopSubscription } from './pages/shop-subscription';
 import { ShopReturns } from './pages/shop-returns';
+import { ShopStart } from './pages/shop-start';
 import { AdminRevenue } from './pages/admin-revenue';
 import { AdminPlans } from './pages/admin-plans';
 import { AdminWallet } from './pages/admin-wallet';
@@ -139,6 +140,14 @@ const router = createBrowserRouter([
         element: (
           <RequireRole auth={auth} roles={['ROLE_SHOP']}>
             <ShopDashboard auth={auth} />
+          </RequireRole>
+        ),
+      },
+      {
+        path: 'shop/start',
+        element: (
+          <RequireRole auth={auth} roles={['ROLE_SHOP']}>
+            <ShopStart auth={auth} />
           </RequireRole>
         ),
       },
@@ -254,7 +263,7 @@ const router = createBrowserRouter([
           </RequireRole>
         ),
       },
-      { path: 'forbidden', element: <ForbiddenPage /> },
+      { path: 'forbidden', element: <ForbiddenPage auth={auth} /> },
     ],
   },
   { path: '*', element: <NotFound /> },

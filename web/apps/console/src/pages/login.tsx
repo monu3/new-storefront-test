@@ -9,6 +9,29 @@ export function LoginPage({ auth }: { auth: AuthAdapter }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  /**
+   * Hands off to Keycloak's registration form.
+   *
+   * <p>Where the new account should land afterwards. `/shop` rather than `/`, because the app
+   * shell reads the profile and forwards an unfinished owner to the wizard on its own -- routing
+   * to `/` here would duplicate that decision in a second place, and the two would eventually
+   * disagree.
+   */
+  async function startRegistration() {
+    setBusy(true);
+    setError(null);
+    try {
+      await auth.register('/shop');
+    } catch (cause) {
+      setError(
+        cause instanceof Error
+          ? `Could not reach the sign-up page: ${cause.message}`
+          : 'Could not reach the sign-up page.',
+      );
+      setBusy(false);
+    }
+  }
+
   useEffect(() => {
     void auth.init().then((authenticated) => {
       if (authenticated) {
@@ -53,6 +76,27 @@ export function LoginPage({ auth }: { auth: AuthAdapter }) {
           <p className="text-xs text-muted-foreground">
             Signs you in to the <code>ops</code> realm, which issues the SHOP and ADMIN roles.
           </p>
+
+          {/* Registration lives in Keycloak, not here. Going through the adapter rather than a
+              hand-built link is what makes it work: the realm requires PKCE, so Keycloak refuses
+              a URL with no code_challenge and bounces straight back here with an error instead of
+              showing a form. `auth.register()` mints the challenge and keeps the verifier for the
+              token exchange. Linking Keycloak's own form rather than reimplementing it keeps
+              password policy and email verification in one place instead of two. */}
+          <div className="border-t pt-4">
+            <Button
+              variant="link"
+              className="h-auto p-0"
+              onClick={() => void startRegistration()}
+              disabled={busy}
+            >
+              Start a new shop
+            </Button>
+            <p className="mt-1 text-xs text-muted-foreground">
+              Creates an account in the <code>ops</code> realm. You will be asked for your shop name
+              and what kind of shop it is next.
+            </p>
+          </div>
         </CardContent>
       </Card>
     </div>

@@ -95,7 +95,7 @@ export function CustomerShell({ children }: { children: ReactNode }) {
           </Link>
 
           <nav className="hidden items-center gap-1 sm:flex" aria-label="Main">
-            <ShellLink href="/" pathname={pathname}>
+            <ShellLink href="/shops" pathname={pathname}>
               Browse
             </ShellLink>
             <ShellLink href="/search" pathname={pathname}>

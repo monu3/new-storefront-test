@@ -116,6 +116,18 @@ public class Shop extends BaseEntity {
 	 * is. This is an editorial decision, which is why it is a flag on the shop and not a row in
 	 * {@code plan_entitlement}.
 	 */
+	/**
+	 * When the owner finished signing up. Null while the shop is still the auto-provisioned
+	 * placeholder created on first sign-in.
+	 *
+	 * <p>Written only through {@link #completeProfile}: a column that can be assigned directly is a
+	 * column that eventually will be.
+	 */
+	@Column(name = "profile_completed_at")
+	@Setter(AccessLevel.NONE)
+	private java.time.Instant profileCompletedAt;
+
+
 	@Column(name = "is_featured", nullable = false)
 	private boolean featured = false;
 
@@ -168,6 +180,31 @@ public class Shop extends BaseEntity {
 	public boolean paysCommission() {
 		return commissionPlan == CommissionPlan.FREE;
 	}
+
+	/**
+	 * Marks the shop as signed up.
+	 *
+	 * <p>Set by the sign-up call and never cleared. A shop that has traded is not un-onboarded, so
+	 * clearing it would send a working shop back through the wizard and -- worse -- let somebody
+	 * edit the name and type of a shop whose URL is already in printed material.
+	 */
+	public void completeProfile(java.time.Instant at) {
+		if (this.profileCompletedAt == null) {
+			this.profileCompletedAt = at;
+		}
+	}
+
+	/**
+	 * Whether the owner has finished signing up.
+	 *
+	 * <p>Distinguishes a real shop from the auto-provisioned placeholder by a timestamp rather than
+	 * by the shop being called "My shop": a string comparison standing in for a fact fails for an
+	 * owner who genuinely chose that name, and breaks entirely the day the placeholder text changes.
+	 */
+	public boolean isProfileComplete() {
+		return profileCompletedAt != null;
+	}
+
 
 	/** Puts the shop at the top of the gallery. Admin only. */
 	public void feature() {

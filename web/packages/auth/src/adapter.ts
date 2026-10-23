@@ -85,6 +85,22 @@ export function takeReturnTo(): string | null {
 export interface AuthAdapter {
   init(): Promise<boolean>;
   login(returnTo?: string): Promise<void>;
+
+  /**
+   * Start self-registration (Phase 8.5).
+   *
+   * <p>Delegated to {@code keycloak-js} rather than assembled here, and the reason is PKCE. Both
+   * realms require it, so Keycloak refuses a registration URL that carries no
+   * {@code code_challenge} — it answers with a 302 straight back to the app carrying
+   * {@code error=invalid_request&error_description=Missing+parameter:+code_challenge_method}.
+   * The browser is then sitting on its own error page instead of a registration form, and nothing
+   * about the failure says the link was the problem.
+   *
+   * <p>A verifier cannot be minted server-side and handed to the browser, either: the app has to
+   * present the same one at the token exchange. {@code register()} does exactly that — generate,
+   * store, challenge, then redeem — which is why this exists rather than a URL builder.
+   */
+  register(returnTo?: string): Promise<void>;
   logout(): Promise<void>;
   isAuthenticated(): boolean;
   getSession(): AuthSession;
@@ -227,6 +243,22 @@ export function createKeycloakAdapter(config: AuthConfig): AuthAdapter {
           });
       }
       return initPromise;
+    },
+
+    async register(returnTo?: string) {
+      if (returnTo) {
+        try {
+          window.sessionStorage.setItem(RETURN_TO_KEY, returnTo);
+        } catch {
+          // Same reasoning as login(): losing the destination is an annoyance, failing the
+          // registration over it would not be.
+        }
+      }
+
+      await kc.register({
+        redirectUri: config.redirectUri,
+        scope: 'openid profile email',
+      });
     },
 
     async login(returnTo?: string) {

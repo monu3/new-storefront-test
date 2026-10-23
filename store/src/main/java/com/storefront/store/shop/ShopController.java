@@ -49,12 +49,40 @@ public class ShopController {
 	 * different problem from "that is not yours", and the client needs to tell them apart to
 	 * show the right screen.
 	 */
+	/**
+	 * The caller's own shop, or an honest "you hold the role but have none".
+	 *
+	 * <p><b>200 with {@code owned: false} — but only for a caller who holds the SHOP role.</b> The
+	 * distinction matters and both answers are right for their own case:
+	 *
+	 * <ul>
+	 *   <li><b>Holds SHOP, owns no shop → 200 {@code owned: false}.</b> A real and ordinary state:
+	 *       a brand-new owner before provisioning, and permanently, every administrator who also
+	 *       holds the shop role. The console has to be able to tell this apart from "owns a shop
+	 *       that is not set up", or an administrator who owns nothing queries shop endpoints for a
+	 *       shop that does not exist and every admin screen carries a background 403.</li>
+	 *   <li><b>Does not hold SHOP → 404.</b> A customer asking for a shop profile is asking for
+	 *       something they have no business with, and answering "200, you own nothing" turns a
+	 *       shop endpoint into a public "no" that reveals which accounts have shops and which do
+	 *       not. This stays as it was.</li>
+	 * </ul>
+	 *
+	 * <p>The project has carried a comment since Phase 0 warning that a 403 on every admin screen
+	 * hides a real 403 the day one appears. The gate never fixed it because it kept asking the
+	 * wrong question — "does this account have the role" rather than "does it have a shop" — and
+	 * those have different answers.
+	 */
 	@GetMapping("/me")
-	@Operation(summary = "The caller's own shop profile")
+	@Operation(summary = "The caller's own shop profile",
+			description = "200 with owned:false for a SHOP-role holder with no shop. 404 for a "
+					+ "caller without the SHOP role, who has no business asking.")
 	public ResponseEntity<ShopResponse> myShop() {
 		return shopService.shopsOf(currentUser.require())
-				.map(shop -> ResponseEntity.ok(ShopResponse.from(shop)))
-				.orElseGet(() -> ResponseEntity.notFound().build());
+				.map(ShopResponse::from)
+				.map(ResponseEntity::ok)
+				.orElseGet(() -> currentUser.hasRole("ROLE_SHOP")
+						? ResponseEntity.ok(ShopResponse.unowned())
+						: ResponseEntity.notFound().build());
 	}
 
 	/**
@@ -137,7 +165,30 @@ public class ShopController {
 			boolean paysCommission,
 			int followerCount,
 			/** Why it was rejected or suspended, when relevant. */
-			String verificationNote) {
+			String verificationNote,
+			/**
+			 * Whether the owner has finished shop sign-up (Phase 8.5).
+			 *
+			 * <p>Here so the console can route on it. Sending the owner to the wizard is a client
+			 * decision, and a client can only make it from something the server said -- inferring
+			 * it from the shop being called "My shop" is a string comparison standing in for a fact.
+			 */
+			@com.fasterxml.jackson.annotation.JsonProperty("profileComplete") boolean profileComplete,
+			/**
+			 * Whether this account owns a shop at all.
+			 *
+			 * <p>Null id means no shop, so this is derivable — but a client that has to know it
+			 * from the absence of a field is being asked to make a decision from a shape rather
+			 * than from an answer.
+			 */
+			boolean owned) {
+
+		/** This account holds no shop. Still a 200 — see {@link #myShop()}. */
+		static ShopResponse unowned() {
+			return new ShopResponse(
+					null, null, null, null, null, null, null, null, null,
+					false, 0, null, false, false);
+		}
 
 		static ShopResponse from(Shop shop) {
 			return new ShopResponse(
@@ -152,7 +203,9 @@ public class ShopController {
 					shop.getFaviconUrl(),
 					shop.paysCommission(),
 					shop.getFollowerCount(),
-					shop.getVerificationNote());
+					shop.getVerificationNote(),
+					shop.isProfileComplete(),
+					true);
 		}
 	}
 }

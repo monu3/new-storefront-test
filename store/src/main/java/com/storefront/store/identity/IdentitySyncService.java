@@ -32,6 +32,7 @@ public class IdentitySyncService {
 
 	private final AppUserRepository users;
 	private final ShopRepository shops;
+	private final com.storefront.store.shop.ShopService shopService;
 	private final com.storefront.store.security.KeycloakProperties keycloak;
 
 	/**
@@ -98,12 +99,28 @@ public class IdentitySyncService {
 	 * <p>Separate from the public signup because the two have different rules: this one runs
 	 * automatically and must never fail, so it picks a placeholder name and leaves the type
 	 * unset for the owner to choose. The real signup path validates the type and the name.
+	 *
+	 * <p><b>The slug has to be allocated, not derived — and getting that wrong cost the platform
+	 * every shop owner but the first.</b> {@link Shop}'s constructor derives its slug from the name,
+	 * and {@link com.storefront.store.catalog.SlugGenerator} only falls back to the id when the
+	 * name folds to nothing. The name here is never nothing: it is the constant {@code "My shop"},
+	 * so every provisionally-created shop was assigned the slug {@code my-shop}, and
+	 * {@code shop.slug} is unique. The first owner registered and was fine. Every owner after that
+	 * met a unique-constraint violation on their very first authenticated request — a 500 from
+	 * {@code /api/v1/shop/me}, before they had done anything at all.
+	 *
+	 * <p>Nothing about the test suite caught it, because every test that creates a shop goes
+	 * through {@link ShopService#signUp}, which allocates. Automatic provisioning was exercised
+	 * exactly once in this project's life, by the one owner who had been here since Phase 1.
+	 * It took registering a genuine second account to find it.
 	 */
 	private Shop provisionShop(AppUser owner) {
 		if (shops.findByOwnerUserId(owner.getId()).isPresent()) {
 			return shops.findByOwnerUserId(owner.getId()).orElseThrow();
 		}
 		Shop shop = new Shop(owner, "My shop", ShopType.GROCERY);
+		// Same allocator the owner's own sign-up uses, so the two paths cannot disagree.
+		shop.setSlug(shopService.allocateUniqueSlug("My shop"));
 		shop.setStatus(Shop.Status.DRAFT);
 		Shop saved = shops.saveAndFlush(shop);
 		log.info("Provisioned draft shop {} for owner {}", saved.getSlug(), owner.getId());

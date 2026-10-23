@@ -70,6 +70,12 @@ public class ShopService {
 			shop.changeType(type);
 		}
 
+		// Marked signed up here rather than anywhere else, because this is the one call that has
+		// validated a real name and a real vertical. The console uses this timestamp to decide
+		// whether somebody still has to fill their shop in -- so a shop that somehow arrived here
+		// another way would correctly not be sent through the wizard twice.
+		shop.completeProfile(java.time.Instant.now());
+
 		Shop saved = shops.saveAndFlush(shop);
 		// Every shop gets a wallet, funded or not. Opening it here means the balance is a
 		// lookup from the first moment rather than a special case on the first order.
@@ -110,6 +116,17 @@ public class ShopService {
 	 * than reject the second with an error the owner cannot act on, the suffix keeps sign-up
 	 * working. The unique index is still the authority — this just avoids the collision.
 	 */
+	/**
+	 * A slug for {@code base} that no shop currently holds.
+	 *
+	 * <p>Public because slug uniqueness is a property of the shop table, not of the signup form.
+	 * {@link #signUp} de-duplicates; automatic provisioning must too, or the two paths disagree and
+	 * the one that forgot gets a unique-constraint violation instead of a slug.
+	 */
+	public String allocateUniqueSlug(String base) {
+		return allocateSlug(base, null);
+	}
+
 	private String allocateSlug(String name, String preference) {
 		String base = SlugGenerator.prefer(preference, name, UUID.randomUUID());
 

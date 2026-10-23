@@ -267,4 +267,67 @@ class IdentitySyncServiceIT {
 			assertThat(identitySync.resolveOrCreate(token).getFullName()).isEqualTo("Ravi Sharma");
 		}
 	}
+
+	@Nested
+	@DisplayName("two owners registering")
+	class TwoOwners {
+
+		/**
+		 * The bug this pins, and it is worth reading before changing anything here.
+		 *
+		 * <p>{@code Shop}'s constructor derives its slug from the name, and {@code SlugGenerator}
+		 * only reaches for the id when the name folds to nothing. Automatic provisioning names every
+		 * draft shop the same constant — {@code "My shop"} — so every draft shop was assigned the
+		 * slug {@code my-shop}, and {@code shop.slug} is unique.
+		 *
+		 * <p>The consequence: the first owner registered and got a shop. Every owner after that hit
+		 * a unique-constraint violation on their first authenticated request, which surfaced as a
+		 * 500 from {@code /api/v1/shop/me} — before they had done anything whatsoever.
+		 *
+		 * <p>Why no existing test saw it: every other test in this project that creates a shop goes
+		 * through {@code ShopService.signUp}, which allocates a unique slug. Provisioning runs on a
+		 * brand-new Keycloak account and had been executed exactly once in this project's life, by
+		 * the owner who had been around since Phase 1. A single execution cannot find a bug that
+		 * needs two.
+		 */
+		@Test
+		@DisplayName("both get a shop, and the slugs differ")
+		void bothOwnersAreProvisioned() {
+			AppUser first = identitySync.resolveOrCreate(
+					jwt(OPS_ISSUER, "owner-a-" + UUID.randomUUID(), "SHOP", "a-" + UUID.randomUUID() + "@example.test"));
+			AppUser second = identitySync.resolveOrCreate(
+					jwt(OPS_ISSUER, "owner-b-" + UUID.randomUUID(), "SHOP", "b-" + UUID.randomUUID() + "@example.test"));
+
+			Shop firstShop = shops.findByOwnerUserId(first.getId()).orElseThrow();
+			Shop secondShop = shops.findByOwnerUserId(second.getId()).orElseThrow();
+
+			assertThat(firstShop.getSlug())
+					.as("provisioning must not collide with the other drafts")
+					.isNotEqualTo(secondShop.getSlug());
+
+			assertThat(shops.existsBySlug(firstShop.getSlug()))
+					.as("the slug is the one the database actually stored")
+					.isTrue();
+			assertThat(shops.existsBySlug(secondShop.getSlug())).isTrue();
+		}
+
+		@Test
+		@DisplayName("a shop already holding the placeholder slug does not block a new owner")
+		void existingPlaceholderSlugDoesNotBlock() {
+			// The oldest shop on a live platform was provisioned before this was fixed and still
+			// holds `my-shop`. That row must not stop the next person registering, so seed one and
+			// then provision an owner against it.
+			AppUser incumbent = fixtures.owner();
+			Shop holder = new Shop(incumbent, "My shop", com.storefront.store.catalog.ShopType.GROCERY);
+			holder.setSlug("my-shop-" + UUID.randomUUID().toString().substring(0, 8));
+			shops.saveAndFlush(holder);
+
+			AppUser newcomer = identitySync.resolveOrCreate(
+					jwt(OPS_ISSUER, "newcomer-" + UUID.randomUUID(), "SHOP", "n-" + UUID.randomUUID() + "@example.test"));
+
+			Shop provisioned = shops.findByOwnerUserId(newcomer.getId()).orElseThrow();
+			assertThat(provisioned.getSlug()).isNotBlank();
+			assertThat(shops.existsBySlug(provisioned.getSlug())).isTrue();
+		}
+	}
 }
