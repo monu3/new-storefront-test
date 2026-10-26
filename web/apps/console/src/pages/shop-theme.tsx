@@ -50,6 +50,9 @@ export function ShopTheme({ auth }: { auth: AuthAdapter }) {
    * worth a round trip per chip, and filtering here keeps the count on each chip honest.
    */
   const [shelf, setShelf] = useState<string>('All');
+  /** The draft the owner has asked to delete, waiting for a second click. */
+  const [confirmRemove, setConfirmRemove] = useState<string | null>(null);
+  const [removingId, setRemovingId] = useState<string | null>(null);
 
   /**
    * The shop's real storefront payload, for the previews.
@@ -163,6 +166,33 @@ export function ShopTheme({ auth }: { auth: AuthAdapter }) {
     navigate(`/shop/theme/customize?theme=${theme.id}`);
   }
 
+  /**
+   * Deletes a draft.
+   *
+   * <p>Two clicks, because the same strip holds "Edit draft" and a stray click on a destructive
+   * action is not recoverable — the document is gone. The server refuses a published theme
+   * anyway, so the second click is about the person, not the data.
+   */
+  async function removeDraft(theme: ThemeView) {
+    setRemovingId(theme.id);
+    setStatus(null);
+    try {
+      await themeApi.remove(theme.id);
+      setThemes((current) => current.filter((item) => item.id !== theme.id));
+      setConfigs((current) => {
+        const next = { ...current };
+        delete next[theme.id];
+        return next;
+      });
+      setConfirmRemove(null);
+      setStatus(`Draft “${theme.name}” removed. Your live storefront was not touched.`);
+    } catch (error) {
+      setStatus(`Could not remove ${theme.name}: ${describeError(error)}`);
+    } finally {
+      setRemovingId(null);
+    }
+  }
+
   const storefrontUrl = `${readEnv('VITE_STOREFRONT_URL') ?? 'http://localhost:3000'}/s/${shopSlug ?? ''}`;
 
   if (loading) {
@@ -231,25 +261,68 @@ export function ShopTheme({ auth }: { auth: AuthAdapter }) {
           </div>
         ) : (
           <div className="grid gap-5 sm:grid-cols-2 xl:grid-cols-3">
-            {themes.map((theme) => (
-              <ThemeCard
-                key={theme.id}
-                name={theme.name}
-                note={theme.published ? 'Live on your storefront' : 'Draft — not published'}
-                live={theme.published}
-                config={configs[theme.id]}
-                data={previewData}
-                action={
-                  <Button
-                    size="sm"
-                    variant={theme.published ? 'secondary' : 'outline'}
-                    onClick={() => edit(theme)}
-                  >
-                    {theme.published ? 'Customize' : 'Edit draft'}
-                  </Button>
-                }
-              />
-            ))}
+            {themes.map((theme) => {
+              const confirming = confirmRemove === theme.id;
+              const removing = removingId === theme.id;
+              return (
+                <ThemeCard
+                  key={theme.id}
+                  name={theme.name}
+                  live={theme.published}
+                  config={configs[theme.id]}
+                  data={previewData}
+                  note={
+                    confirming
+                      ? 'Delete this draft? Customers keep seeing the live theme.'
+                      : theme.published
+                        ? 'Live on your storefront'
+                        : 'Draft — not published'
+                  }
+                  action={
+                    confirming ? (
+                      <div className="flex items-center gap-1">
+                        <Button
+                          size="sm"
+                          variant="destructive"
+                          disabled={removing}
+                          onClick={() => void removeDraft(theme)}
+                        >
+                          {removing ? 'Removing…' : 'Delete'}
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          disabled={removing}
+                          onClick={() => setConfirmRemove(null)}
+                        >
+                          Keep
+                        </Button>
+                      </div>
+                    ) : (
+                      <div className="flex items-center gap-1">
+                        <Button
+                          size="sm"
+                          variant={theme.published ? 'secondary' : 'outline'}
+                          onClick={() => edit(theme)}
+                        >
+                          {theme.published ? 'Customize' : 'Edit draft'}
+                        </Button>
+                        {theme.published ? null : (
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            className="text-destructive hover:bg-destructive/10 hover:text-destructive"
+                            onClick={() => setConfirmRemove(theme.id)}
+                          >
+                            Remove
+                          </Button>
+                        )}
+                      </div>
+                    )
+                  }
+                />
+              );
+            })}
           </div>
         )}
       </section>

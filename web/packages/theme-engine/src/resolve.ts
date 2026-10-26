@@ -10,7 +10,8 @@
  * product appears.
  */
 
-import type { ThemeSection } from './schema';
+import type { ThemeLayout, ThemeSection } from './schema';
+import { themeLayoutSchema } from './schema';
 
 /** What the storefront endpoint returns. Shapes mirror `PublicThemeController.StorefrontData`. */
 export interface StorefrontData {
@@ -87,6 +88,14 @@ export interface ResolvedSection {
   asset: ThemeAssetData | null;
   /** The shop, for headings and links. */
   shop: { slug: string; name: string; logoUrl?: string | null; description?: string | null };
+  /**
+   * The theme's page-level layout.
+   *
+   * <p>Carried on every section because the header, the hero, the cards and the section bands all
+   * have to agree about it, and passing it through props at nine call sites would have made one
+   * of them forget. It is the parsed document's value, so defaults are already applied.
+   */
+  layout: ThemeLayout;
 }
 
 /** Where a section's content comes from. */
@@ -122,7 +131,11 @@ export function sectionLimit(section: ThemeSection, fallback: number): number {
  * shop typed `"source": "best_sellers"` takes down a shop's entire homepage; an empty section
  * takes down one block.
  */
-export function resolveSection(section: ThemeSection, data: StorefrontData): ResolvedSection {
+export function resolveSection(
+  section: ThemeSection,
+  data: StorefrontData,
+  layout: ThemeLayout = themeLayoutSchema.parse({}),
+): ResolvedSection {
   const source = sectionSource(section);
   const limit = sectionLimit(section, 12);
 
@@ -148,6 +161,15 @@ export function resolveSection(section: ThemeSection, data: StorefrontData): Res
       break;
   }
 
+  // The header falls back to the shop's categories when it has no links of its own. That fallback
+  // read an empty list for every header ever rendered, because categories were filled only for a
+  // section whose `source` is `shop_categories` — so a shop that had not configured links showed
+  // "Add links, or publish some products so your categories appear here." in its customer-facing
+  // masthead, next to a category grid that visibly listed the categories.
+  if (section.type === 'site-header' && categories.length === 0) {
+    categories = (data.categories ?? []).slice(0, 8);
+  }
+
   return {
     section,
     products: products.map((p) => ({ ...p, shopSlug: data.shopSlug })),
@@ -159,6 +181,7 @@ export function resolveSection(section: ThemeSection, data: StorefrontData): Res
       logoUrl: data.logoUrl ?? null,
       description: data.description ?? null,
     },
+    layout,
   };
 }
 
@@ -166,8 +189,9 @@ export function resolveSection(section: ThemeSection, data: StorefrontData): Res
 export function resolveSections(
   sections: ThemeSection[],
   data: StorefrontData,
+  layout: ThemeLayout = themeLayoutSchema.parse({}),
 ): ResolvedSection[] {
-  return sections.filter((s) => s.hidden !== true).map((s) => resolveSection(s, data));
+  return sections.filter((s) => s.hidden !== true).map((s) => resolveSection(s, data, layout));
 }
 
 /**

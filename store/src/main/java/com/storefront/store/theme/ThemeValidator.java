@@ -73,6 +73,7 @@ public class ThemeValidator {
 
 		validateVersion(root, issues);
 		validateTokens(root, issues);
+		validateLayout(root, issues);
 		validateSections(root, issues);
 		validateNav(root, issues);
 		validateFooter(root, issues);
@@ -153,6 +154,56 @@ public class ThemeValidator {
 						+ "rendered. It is saved but ignored.");
 			}
 		});
+	}
+
+	// ------------------------------------------------------------------ layout
+
+	private static final Set<String> LAYOUT_WIDTHS = Set.of("standard", "wide", "full");
+	private static final Set<String> LAYOUT_HEADERS = Set.of("pill", "bar", "centered", "minimal");
+	private static final Set<String> LAYOUT_CARDS = Set.of("bordered", "plain", "editorial");
+	private static final Set<String> LAYOUT_DISPLAYS = Set.of("default", "editorial", "compact");
+
+	/**
+	 * The page-level layout block, mirroring {@code themeLayoutSchema}.
+	 *
+	 * <p>An absent block means every default, so themes written before the catalogue keep working.
+	 * A present block is checked strictly: an unknown key or an unknown value is rejected rather
+	 * than ignored, because the browser schema would reject the document and the shop would get a
+	 * blank storefront while the server quietly stored something it could not render.
+	 */
+	private void validateLayout(JsonNode root, List<String> issues) {
+		JsonNode layout = root.get("layout");
+		if (layout == null || layout.isNull()) {
+			return;
+		}
+		if (!layout.isObject()) {
+			issues.add("layout: must be an object");
+			return;
+		}
+
+		layout.fields().forEachRemaining(entry -> {
+			String name = entry.getKey();
+			JsonNode value = entry.getValue();
+			switch (name) {
+			case "bands" -> {
+				if (!value.isBoolean()) {
+					issues.add("layout.bands: must be true or false");
+				}
+			}
+			case "width" -> checkLayoutChoice("width", value, LAYOUT_WIDTHS, issues);
+			case "header" -> checkLayoutChoice("header", value, LAYOUT_HEADERS, issues);
+			case "card" -> checkLayoutChoice("card", value, LAYOUT_CARDS, issues);
+			case "display" -> checkLayoutChoice("display", value, LAYOUT_DISPLAYS, issues);
+			default -> issues.add("layout." + name + ": unknown layout option");
+			}
+		});
+	}
+
+	private void checkLayoutChoice(String name, JsonNode value, Set<String> allowed, List<String> issues) {
+		if (!value.isTextual() || !allowed.contains(value.asText())) {
+			issues.add("layout." + name + ": must be one of "
+					+ String.join(", ", new java.util.TreeSet<>(allowed)));
+		}
 	}
 
 	// ------------------------------------------------------------------ sections

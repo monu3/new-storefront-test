@@ -28,6 +28,19 @@ import { parseTheme } from './schema';
 import { resolveSections } from './resolve';
 import type { ResolvedSection, StorefrontData } from './resolve';
 
+/**
+ * How wide a page is allowed to get.
+ *
+ * <p>The renderer owns the column, not the page that embeds it: a theme that asks to be wide has
+ * to be wide in the console preview too, or the preview stops being a preview. Gutters are the
+ * same at every width so a section's tinted band can cancel them with the same negative margin.
+ */
+const PAGE_WIDTH: Record<'standard' | 'wide' | 'full', string> = {
+  standard: 'mx-auto w-full max-w-6xl px-4 sm:px-6',
+  wide: 'mx-auto w-full max-w-[1440px] px-4 sm:px-6',
+  full: 'w-full px-4 sm:px-6',
+};
+
 export interface ThemeRendererProps {
   /** The raw theme document, exactly as stored. Parsed here so a bad one degrades rather than throws. */
   config: string | ThemeConfig | unknown;
@@ -58,7 +71,7 @@ export function ThemeRenderer({
   // issue rather than throwing, so a storefront degrades to a visible notice instead of a 500.
   const { theme, issues } = parseTheme(config);
 
-  const resolved = resolveSections(theme.sections, data);
+  const resolved = resolveSections(theme.sections, data, theme.layout);
 
   // A theme that does not validate still renders its valid parts, and says so. Swallowing it is
   // how a storefront ends up silently blank.
@@ -66,26 +79,38 @@ export function ThemeRenderer({
 
   return (
     <div
-      className={className}
+      /*
+        The theme paints its own page.
+
+        <p>Tokens were written here but nothing consumed `--background`, so a theme's background
+        colour only appeared on the few elements that asked for `bg-background` — a header search
+        pill on a shop whose stored background was, accidentally, rose, while the page around it
+        stayed the platform's cream. Every template's tinted page (the parchment, the blush, the
+        near-white green) was invisible on the storefront and in the gallery. Painting the root is
+        the one place that makes a theme a page rather than a stack of sections.
+      */
+      className={`bg-background pb-16 text-foreground ${className ?? ''}`}
       // Tokens are written to a scoped element, not :root. A storefront's palette must not leak
       // into the admin console in the same tab, and two storefronts previewed side by side must not
       // fight over one global variable.
       style={themeScopeStyle(theme.tokens) as CSSProperties}
     >
-      {invalid ? <ThemeIssues issues={issues} visible={showIssues} shop={data.shopName} /> : null}
-      {resolved.map((section) => (
-        <Section key={section.section.id} resolved={section} />
-      ))}
-      {invalid && resolved.length === 0 ? (
-        // Nothing parsed, so nothing to show. A shop with an entirely invalid theme still gets a
-        // storefront rather than a white page.
-        <section className="py-16 text-center">
-          <h1 className="text-2xl font-bold">{data.shopName}</h1>
-          <p className="mt-2 text-sm text-muted-foreground">
-            This storefront has not been set up yet.
-          </p>
-        </section>
-      ) : null}
+      <div className={PAGE_WIDTH[theme.layout.width]}>
+        {invalid ? <ThemeIssues issues={issues} visible={showIssues} shop={data.shopName} /> : null}
+        {resolved.map((section) => (
+          <Section key={section.section.id} resolved={section} />
+        ))}
+        {invalid && resolved.length === 0 ? (
+          // Nothing parsed, so nothing to show. A shop with an entirely invalid theme still gets a
+          // storefront rather than a white page.
+          <section className="py-16 text-center">
+            <h1 className="text-2xl font-bold">{data.shopName}</h1>
+            <p className="mt-2 text-sm text-muted-foreground">
+              This storefront has not been set up yet.
+            </p>
+          </section>
+        ) : null}
+      </div>
     </div>
   );
 }

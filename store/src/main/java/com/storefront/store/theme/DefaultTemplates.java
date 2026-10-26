@@ -57,7 +57,7 @@ public final class DefaultTemplates {
 			      "props": { "columns": 4, "source": "shop_categories", "limit": 8 } },
 			    { "id": "featured", "type": "product-carousel",
 			      "props": { "source": "featured", "limit": 8, "layoutId": "card-soft" } },
-			    { "id": "all-products", "type": "product-grid",
+			    { "id": "products", "type": "product-grid",
 			      "props": { "source": "latest", "limit": 8, "columns": 4 } },
 			    { "id": "trust", "type": "trust-badges",
 			      "props": { "items": ["Cash on delivery", "Bank transfer", "Secure checkout"] } }
@@ -94,7 +94,7 @@ public final class DefaultTemplates {
 				      "props": { "columns": 4, "source": "shop_categories", "limit": 8 } },
 				    { "id": "featured", "type": "product-carousel",
 				      "props": { "source": "featured", "limit": 8, "layoutId": "card-soft" } },
-				    { "id": "all-products", "type": "product-grid",
+				    { "id": "products", "type": "product-grid",
 				      "props": { "source": "latest", "limit": 12, "columns": 4 } },
 				    { "id": "how-it-works", "type": "feature-list",
 				      "props": { "items": [
@@ -141,7 +141,7 @@ public final class DefaultTemplates {
 				      "props": { "columns": 4, "source": "shop_categories", "limit": 8 } },
 				    { "id": "featured", "type": "product-carousel",
 				      "props": { "source": "featured", "limit": 8, "layoutId": "card-soft" } },
-				    { "id": "all-products", "type": "product-grid",
+				    { "id": "products", "type": "product-grid",
 				      "props": { "source": "latest", "limit": 8, "columns": 4 } },
 				    { "id": "story", "type": "image-with-text",
 				      "props": { "imageUrl": "", "heading": "Made by hand",
@@ -176,7 +176,7 @@ public final class DefaultTemplates {
 				      "props": { "columns": 5, "source": "shop_categories", "limit": 10 } },
 				    { "id": "featured", "type": "product-carousel",
 				      "props": { "source": "featured", "limit": 8, "layoutId": "card-soft" } },
-				    { "id": "all-products", "type": "product-grid",
+				    { "id": "products", "type": "product-grid",
 				      "props": { "source": "latest", "limit": 12, "columns": 4 } },
 				    { "id": "trust", "type": "trust-badges",
 				      "props": { "items": ["Sourced locally", "Cash on delivery", "Same-day in city"] } }

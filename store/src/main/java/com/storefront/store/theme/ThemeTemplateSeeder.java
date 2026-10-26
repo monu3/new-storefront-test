@@ -40,10 +40,14 @@ import lombok.RequiredArgsConstructor;
  * independently, so a config the validator rejects is logged with its filename and skipped
  * rather than aborting startup — the platform is perfectly usable with thirteen templates.
  *
- * <p><b>Never overwrites.</b> An admin who has edited or unpublished a template must not find it
- * reset by a restart, so an existing {@code code} is left exactly as it is. That also means a
- * change to a shipped file only reaches shops that install it after the change; existing shops
- * hold their own copy by design.
+ * <p><b>Reconciles shipped content, never shop content.</b> An existing {@code code} has its
+ * name, description, shelf, type, order and config replaced when the file differs from the row,
+ * so editing a template in the repository is enough to change what the gallery offers. The first
+ * version refused to touch an existing row, which meant a shipped fix reached new databases only
+ * and every developer's catalogue stayed frozen at whatever they first booted. What is
+ * deliberately preserved is publication state and {@code active}: an admin who withdraws a
+ * template does not find it back on the shelf after a restart. Installed themes are copies in
+ * {@code shop_theme}, so no shop's storefront changes when a template is refreshed.
  *
  * <p><b>Off in tests</b> ({@code store.themes.seed=false} in the test profile). A test asserting
  * "a draft is not offered" cannot also tolerate a seeder that published a template on the way
@@ -61,6 +65,7 @@ public class ThemeTemplateSeeder implements ApplicationRunner {
 
 	private final ThemeService themes;
 	private final ThemeTemplateRepository templates;
+	private final ThemeValidator validator;
 	private final ObjectMapper json;
 
 	@Override
@@ -135,8 +140,9 @@ public class ThemeTemplateSeeder implements ApplicationRunner {
 	}
 
 	private void seed(TemplateFile file) {
-		if (templates.findByCode(file.code()).isPresent()) {
-			// Never overwrite: an admin's edits must survive a restart.
+		var existing = templates.findByCode(file.code());
+		if (existing.isPresent()) {
+			refresh(file, existing.get());
 			return;
 		}
 		try {
@@ -151,6 +157,43 @@ public class ThemeTemplateSeeder implements ApplicationRunner {
 			// The validator rejected the document, or the code collided between two files. Neither
 			// is worth stopping the boot for, but both are worth a line a developer will see.
 			log.error("Could not seed theme template '{}': {}", file.code(), e.getMessage());
+		}
+	}
+
+	/**
+	 * Brings one existing row up to the shipped file.
+	 *
+	 * <p>Compared as JSON trees rather than strings: {@code jsonb} reorders keys and drops
+	 * whitespace on write, so a textual comparison would report every row as stale on every boot
+	 * and rewrite the whole catalogue each time. Publication state is not touched.
+	 */
+	private void refresh(TemplateFile file, ThemeTemplate template) {
+		try {
+			String config = validator.validateAndNormalise(file.config());
+			JsonNode shipped = json.readTree(config);
+			JsonNode stored = json.readTree(template.getConfig());
+
+			boolean same = shipped.equals(stored)
+					&& java.util.Objects.equals(template.getName(), file.name())
+					&& java.util.Objects.equals(template.getDescription(), file.description())
+					&& java.util.Objects.equals(template.getCategory(), file.category())
+					&& java.util.Objects.equals(template.shopTypeOrNull(), file.shopType())
+					&& template.getSortOrder() == file.sortOrder();
+			if (same) {
+				return;
+			}
+
+			template.setName(file.name());
+			template.setDescription(file.description());
+			template.setCategory(file.category());
+			template.changeType(file.shopType());
+			template.setSortOrder(file.sortOrder());
+			template.setConfig(config);
+			templates.save(template);
+			log.info("Refreshed theme template '{}' from the shipped catalogue", file.code());
+		} catch (RuntimeException | com.fasterxml.jackson.core.JsonProcessingException e) {
+			// A broken shipped file must not stop a boot or wipe a working row.
+			log.error("Could not refresh theme template '{}': {}", file.code(), e.getMessage());
 		}
 	}
 

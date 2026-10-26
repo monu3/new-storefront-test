@@ -276,6 +276,64 @@ class ThemeValidatorTest {
 	}
 
 	@Nested
+	@DisplayName("layout")
+	class Layout {
+
+		private String withLayout(String body) {
+			return """
+					{ "schemaVersion": 1, "tokens": {}, "layout": %s, "sections": [] }
+					""".formatted(body);
+		}
+
+		@Test
+		@DisplayName("every shipped choice is accepted")
+		void accepted() {
+			assertThatCode(() -> validator.validateAndNormalise(withLayout("""
+					{ "width": "full", "header": "bar", "card": "editorial", "bands": true, "display": "compact" }
+					"""))).doesNotThrowAnyException();
+		}
+
+		@Test
+		@DisplayName("an empty block means every default")
+		void empty() {
+			assertThatCode(() -> validator.validateAndNormalise(withLayout("{}")))
+					.doesNotThrowAnyException();
+		}
+
+		@Test
+		@DisplayName("an unknown value is an error, not a silent default")
+		void unknownValue() {
+			// The browser schema would reject the document and the storefront would fall back to
+			// the empty theme, so storing this would be storing a page nobody can see.
+			assertThat(issuesOf(withLayout("""
+					{ "header": "floating" }
+					"""))).anyMatch(issue -> issue.startsWith("layout.header"));
+		}
+
+		@Test
+		@DisplayName("an unknown key is an error, so typos do not vanish")
+		void unknownKey() {
+			assertThat(issuesOf(withLayout("""
+					{ "headers": "bar" }
+					"""))).anyMatch(issue -> issue.startsWith("layout.headers"));
+		}
+
+		@Test
+		@DisplayName("bands must be a boolean")
+		void bandsType() {
+			assertThat(issuesOf(withLayout("""
+					{ "bands": "yes" }
+					"""))).anyMatch(issue -> issue.startsWith("layout.bands"));
+		}
+
+		@Test
+		@DisplayName("the block itself must be an object")
+		void blockType() {
+			assertThat(issuesOf(withLayout("[]"))).contains("layout: must be an object");
+		}
+	}
+
+	@Nested
 	@DisplayName("handles")
 	class Handles {
 

@@ -71,10 +71,81 @@ function SafeHref({ href, children, className }: { href: string; children: React
  * — a rule the plan enforces with an ESLint boundary. A plain anchor works in both and keeps the
  * preview's markup identical to the live page's.
  */
-function ProductCard({ product }: { product: ProductSummary }) {
+function ProductCard({
+  product,
+  card = 'bordered',
+}: {
+  product: ProductSummary;
+  /** The theme's card treatment. `bordered` is the original tile. */
+  card?: 'bordered' | 'plain' | 'editorial';
+}) {
   const discounted = product.hasDiscount || (product.compareAt ?? 0) > product.price;
   const href = `/s/${product.shopSlug ?? ''}/p/${product.slug}`;
   const unavailable = product.purchasable === false;
+
+  const price = (
+    <div className="flex items-baseline gap-2">
+      <span className="text-sm font-semibold">{formatPrice(product.price)}</span>
+      {discounted && product.compareAt ? (
+        <span className="text-xs text-muted-foreground line-through">
+          {formatPrice(product.compareAt)}
+        </span>
+      ) : null}
+    </div>
+  );
+
+  if (card !== 'bordered') {
+    // Borderless and editorial cards carry no chrome at all: the photograph is the object, and a
+    // border around every product makes a fashion shop look like a spreadsheet.
+    const editorial = card === 'editorial';
+    return (
+      <SafeHref
+        href={href}
+        className={`group flex flex-col gap-3 text-card-foreground ${
+          unavailable ? 'opacity-60' : ''
+        }`}
+      >
+        <div
+          className={`${
+            editorial ? 'aspect-[3/4]' : 'aspect-square'
+          } w-full overflow-hidden rounded-[var(--radius)] bg-muted`}
+        >
+          <SafeImage
+            src={product.imageUrl}
+            alt={product.name}
+            loading="lazy"
+            className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-[1.04]"
+          />
+        </div>
+        <div
+          className={
+            editorial
+              ? 'flex items-start justify-between gap-4 border-b border-border pb-3'
+              : 'flex items-start justify-between gap-3'
+          }
+        >
+          <div className="min-w-0">
+            {product.categoryLabel ? (
+              <p className="text-[11px] uppercase tracking-[0.12em] text-muted-foreground">
+                {product.categoryLabel}
+              </p>
+            ) : null}
+            <h3
+              className={`mt-1 line-clamp-2 leading-snug ${
+                editorial ? 'text-base font-normal' : 'text-sm font-medium'
+              }`}
+            >
+              {product.name}
+            </h3>
+            {unavailable ? (
+              <p className="mt-1 text-xs text-muted-foreground">Out of stock</p>
+            ) : null}
+          </div>
+          <div className="shrink-0 pt-4">{price}</div>
+        </div>
+      </SafeHref>
+    );
+  }
 
   return (
     <SafeHref
@@ -96,14 +167,7 @@ function ProductCard({ product }: { product: ProductSummary }) {
           <span className="text-xs text-muted-foreground">{product.categoryLabel}</span>
         ) : null}
         <h3 className="line-clamp-2 text-sm font-medium leading-snug">{product.name}</h3>
-        <div className="mt-auto flex items-baseline gap-2 pt-2">
-          <span className="text-sm font-semibold">{formatPrice(product.price)}</span>
-          {discounted && product.compareAt ? (
-            <span className="text-xs text-muted-foreground line-through">
-              {formatPrice(product.compareAt)}
-            </span>
-          ) : null}
-        </div>
+        <div className="mt-auto pt-2">{price}</div>
         {unavailable ? (
           <span className="text-xs text-muted-foreground">Out of stock</span>
         ) : null}
@@ -113,7 +177,7 @@ function ProductCard({ product }: { product: ProductSummary }) {
 }
 
 function ProductGrid({ resolved }: SectionProps) {
-  const { section, products } = resolved;
+  const { section, products, layout } = resolved;
   const columns = Math.min(Math.max(num(section.props, 'columns', 4), 1), 6);
 
   if (products.length === 0) {
@@ -121,14 +185,14 @@ function ProductGrid({ resolved }: SectionProps) {
   }
 
   return (
-    <Section>
-      <SectionHeading text={text(section.props, 'heading')} sub={text(section.props, 'subheading')} />
+    <Section resolved={resolved}>
+      <SectionHeading display={resolved.layout.display} text={text(section.props, 'heading')} sub={text(section.props, 'subheading')} />
       <div
         className="grid gap-4"
         style={{ gridTemplateColumns: `repeat(${columns}, minmax(0, 1fr))` }}
       >
         {products.map((p) => (
-          <ProductCard key={p.id ?? p.name} product={p} />
+          <ProductCard key={p.id ?? p.name} product={p} card={layout.card} />
         ))}
       </div>
     </Section>
@@ -136,21 +200,21 @@ function ProductGrid({ resolved }: SectionProps) {
 }
 
 function ProductCarousel({ resolved }: SectionProps) {
-  const { section, products } = resolved;
+  const { section, products, layout } = resolved;
 
   if (products.length === 0) {
     return <EmptySection label="No products to show yet" />;
   }
 
   return (
-    <Section>
-      <SectionHeading text={text(section.props, 'heading')} sub={text(section.props, 'subheading')} />
+    <Section resolved={resolved}>
+      <SectionHeading display={resolved.layout.display} text={text(section.props, 'heading')} sub={text(section.props, 'subheading')} />
       {/* A scroll-snap row rather than a carousel with JS. The content is in the HTML either
           way, and a customer's swipe is a scroll the browser already handles. */}
       <div className="flex snap-x snap-mandatory gap-4 overflow-x-auto pb-2">
         {products.map((p) => (
           <div key={p.id ?? p.name} className="w-56 shrink-0 snap-start">
-            <ProductCard product={p} />
+            <ProductCard product={p} card={layout.card} />
           </div>
         ))}
       </div>
@@ -159,7 +223,7 @@ function ProductCarousel({ resolved }: SectionProps) {
 }
 
 function CategoryGrid({ resolved }: SectionProps) {
-  const { section, categories, shop } = resolved;
+  const { section, categories, shop, layout } = resolved;
   const columns = Math.min(Math.max(num(section.props, 'columns', 4), 2), 6);
 
   if (categories.length === 0) {
@@ -167,8 +231,8 @@ function CategoryGrid({ resolved }: SectionProps) {
   }
 
   return (
-    <Section>
-      <SectionHeading text={text(section.props, 'heading')} sub={text(section.props, 'subheading')} />
+    <Section resolved={resolved}>
+      <SectionHeading display={resolved.layout.display} text={text(section.props, 'heading')} sub={text(section.props, 'subheading')} />
       <div
         className="grid gap-3"
         style={{ gridTemplateColumns: `repeat(${columns}, minmax(0, 1fr))` }}
@@ -177,7 +241,11 @@ function CategoryGrid({ resolved }: SectionProps) {
           <SafeHref
             key={c.code}
             href={`/s/${shop.slug}/c/${c.code.toLowerCase()}`}
-            className="flex flex-col items-center justify-center gap-1 rounded-lg border bg-card p-6 text-center transition-colors hover:bg-muted"
+            className={
+              layout.card === 'bordered'
+                ? 'flex flex-col items-center justify-center gap-1 rounded-lg border bg-card p-6 text-center transition-colors hover:bg-muted'
+                : 'flex flex-col items-center justify-center gap-1 border-b border-border py-6 text-center transition-colors hover:text-primary'
+            }
           >
             <span className="text-sm font-medium">{c.label}</span>
             <span className="text-xs text-muted-foreground">{c.productCount} products</span>
@@ -197,8 +265,8 @@ function CollectionList({ resolved }: SectionProps) {
   }
 
   return (
-    <Section>
-      <SectionHeading text={text(section.props, 'heading')} />
+    <Section resolved={resolved}>
+      <SectionHeading display={resolved.layout.display} text={text(section.props, 'heading')} />
       <ul className="grid gap-3 sm:grid-cols-2">
         {collections.map((c: Record<string, unknown>) => (
           <li key={text(c, 'title')} className="rounded-lg border bg-card p-4">
@@ -220,56 +288,157 @@ function CollectionList({ resolved }: SectionProps) {
 // ---------------------------------------------------------------------------
 
 function Hero({ resolved }: SectionProps) {
-  const { section, shop } = resolved;
+  const { section, shop, layout } = resolved;
   const image = sectionImageUrl(resolved);
   const cta = (section.props?.cta ?? {}) as Record<string, unknown>;
-  const centred = section.variant === 'centered';
+  const variant = section.variant ?? 'split-image';
+  const display = layout.display;
 
-  const copy = (
+  const headingClass =
+    display === 'editorial'
+      ? 'text-5xl font-medium leading-[0.98] tracking-[-0.03em] sm:text-6xl lg:text-7xl'
+      : display === 'compact'
+        ? 'text-3xl font-semibold uppercase leading-[1.06] tracking-[0.01em] sm:text-4xl'
+        : 'text-4xl font-semibold leading-[1.04] tracking-[-0.035em] sm:text-5xl';
+
+  const ctaClass =
+    'mt-7 inline-flex h-12 items-center rounded-[var(--radius)] bg-primary px-7 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90';
+
+  const copy = (centred: boolean) => (
     <div className={centred ? 'mx-auto max-w-2xl text-center' : ''}>
-      <h1 className="text-4xl font-semibold leading-[1.04] tracking-[-0.035em] sm:text-5xl">
-        {text(section.props, 'heading', shop.name)}
-      </h1>
+      <h1 className={headingClass}>{text(section.props, 'heading', shop.name)}</h1>
       {text(section.props, 'subheading') ? (
-        <p className="mt-3 text-base text-muted-foreground">
-          {text(section.props, 'subheading')}
-        </p>
+        <p className="mt-4 text-base text-muted-foreground">{text(section.props, 'subheading')}</p>
       ) : null}
       {text(cta, 'label') ? (
-        <SafeHref
-          href={text(cta, 'href', '#products')}
-          className="mt-6 inline-flex h-12 items-center rounded-full bg-primary px-7 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90"
-        >
+        <SafeHref href={text(cta, 'href', '#products')} className={ctaClass}>
           {text(cta, 'label')}
         </SafeHref>
       ) : null}
     </div>
   );
 
+  /**
+   * A typographic panel.
+   *
+   * <p>Most shops never upload a hero photograph, and a 4:3 placeholder is the largest object on
+   * the page — a designed homepage with no product photography should still look designed. The
+   * panel is also the honest fallback for an `overlay` hero whose image is missing: a solid block
+   * with readable copy, rather than white text on a grey rectangle.
+   */
+  const panel = (
+    <section className="my-6 overflow-hidden rounded-[var(--radius)] bg-primary px-6 py-16 text-primary-foreground sm:px-12 sm:py-24">
+      <div className="max-w-3xl">
+        <h1 className={headingClass}>{text(section.props, 'heading', shop.name)}</h1>
+        {text(section.props, 'subheading') ? (
+          <p className="mt-4 max-w-xl text-base text-primary-foreground/80">
+            {text(section.props, 'subheading')}
+          </p>
+        ) : null}
+        {text(cta, 'label') ? (
+          <SafeHref
+            href={text(cta, 'href', '#products')}
+            className="mt-8 inline-flex h-12 items-center rounded-[var(--radius)] bg-primary-foreground px-7 text-sm font-medium text-primary transition-opacity hover:opacity-90"
+          >
+            {text(cta, 'label')}
+          </SafeHref>
+        ) : null}
+      </div>
+    </section>
+  );
+
+  if (variant === 'panel') {
+    return panel;
+  }
+
+  if (variant === 'overlay') {
+    if (!image) {
+      return panel;
+    }
+    return (
+      <section className="relative my-6 overflow-hidden rounded-[var(--radius)]">
+        <SafeImage
+          src={image}
+          alt=""
+          loading="eager"
+          className="h-[440px] w-full object-cover sm:h-[520px]"
+        />
+        <div
+          className="absolute inset-0 bg-gradient-to-t from-black/75 via-black/20 to-transparent"
+          aria-hidden
+        />
+        <div className="absolute inset-x-0 bottom-0 p-6 sm:p-10">
+          <div className="max-w-2xl text-white">
+            <h1 className={headingClass}>{text(section.props, 'heading', shop.name)}</h1>
+            {text(section.props, 'subheading') ? (
+              <p className="mt-4 text-base text-white/80">
+                {text(section.props, 'subheading')}
+              </p>
+            ) : null}
+            {text(cta, 'label') ? (
+              <SafeHref
+                href={text(cta, 'href', '#products')}
+                className="mt-7 inline-flex h-12 items-center rounded-[var(--radius)] bg-white px-7 text-sm font-medium text-black transition-opacity hover:opacity-90"
+              >
+                {text(cta, 'label')}
+              </SafeHref>
+            ) : null}
+          </div>
+        </div>
+      </section>
+    );
+  }
+
+  const centred = variant === 'centered';
+
+  /*
+    No photograph is not a hole to fill.
+
+    <p>A split hero without an image used to render a 4:3 grey rectangle opposite the copy: the
+    largest object on the page, and the first thing a customer saw. Most shops have not uploaded a
+    hero photograph, so that rectangle was the default storefront. Without an image the hero is now
+    a typographic one — left-aligned for a split, centred for a centred hero — which is a layout
+    plenty of modern shops use deliberately, and which leaves the photograph as an upgrade rather
+    than a missing piece.
+  */
+  if (!image) {
+    return (
+      <section
+        className={centred ? 'py-16 sm:py-24' : 'py-14 sm:py-20'}
+        id={text(section.props, 'anchor', 'hero')}
+      >
+        <div className={centred ? 'mx-auto max-w-3xl' : 'max-w-3xl'}>{copy(centred)}</div>
+      </section>
+    );
+  }
+
   const picture = (
-    // A placeholder rather than a broken image: a shop that has not uploaded a hero photograph
-    // still gets a homepage that looks deliberate. `SafeImage` also covers the case the previous
-    // code missed — a URL that exists but fails to load, which is what a deleted asset looks like.
     <SafeImage
       src={image}
       alt=""
       loading="eager"
-      className="aspect-[4/3] w-full rounded-[1.5rem] object-cover"
-      fallbackClassName="flex aspect-[4/3] w-full items-center justify-center rounded-[1.5rem] bg-muted text-sm text-muted-foreground"
-      fallbackLabel="Add a hero image"
+      className="aspect-[4/3] w-full rounded-[var(--radius)] object-cover"
+      /*
+        A monogram plate rather than the words "Add a hero image". That copy was written for the
+        owner and was being shown to customers; a large grey rectangle with an instruction in it
+        is also the most dominant object on a page that has no photograph. A tinted plate with the
+        shop's initials reads as a deliberate brand mark instead of a missing file.
+      */
+      fallbackClassName="flex aspect-[4/3] w-full items-center justify-center rounded-[var(--radius)] border border-border/70 bg-muted text-6xl font-medium uppercase tracking-[0.24em] text-primary/60"
+      fallbackLabel={shop.name.slice(0, 2).toUpperCase()}
     />
   );
 
   return (
     <section className="pt-6" id={text(section.props, 'anchor', 'hero')}>
       {centred ? (
-        <div className="flex flex-col gap-6">
-          {copy}
+        <div className="flex flex-col gap-8">
+          {copy(true)}
           {picture}
         </div>
       ) : (
         <div className="grid items-center gap-8 md:grid-cols-2">
-          {copy}
+          {copy(false)}
           {picture}
         </div>
       )}
@@ -369,7 +538,7 @@ function RichText({ resolved }: SectionProps) {
   // behind one (D15) — shipping raw HTML now would be shipping the XSS that deferral avoids.
   const paragraphs = body.split(/\n{2,}/).filter(Boolean);
   return (
-    <Section>
+    <Section resolved={resolved}>
       {text(section.props, 'heading') ? (
         <h2 className="mb-3 text-2xl font-bold">{text(section.props, 'heading')}</h2>
       ) : null}
@@ -383,45 +552,58 @@ function RichText({ resolved }: SectionProps) {
 }
 
 function ImageWithText({ resolved }: SectionProps) {
-  const { section } = resolved;
+  const { section, shop } = resolved;
   const image = sectionImageUrl(resolved);
   const right = text(section.props, 'imagePosition', 'left') === 'right';
+
+  const copy = (
+    <div>
+      <h2 className="text-3xl font-semibold tracking-tight">{text(section.props, 'heading')}</h2>
+      <p className="mt-3 text-sm leading-relaxed text-muted-foreground">
+        {text(section.props, 'body')}
+      </p>
+    </div>
+  );
+
+  /*
+    Same rule as the hero: without an image this is a text block, not a caption under a grey
+    rectangle that says "Add an image" to a customer.
+  */
+  if (!image) {
+    return (
+      <Section resolved={resolved}>
+        <div className="max-w-2xl">{copy}</div>
+      </Section>
+    );
+  }
 
   const picture = (
     <SafeImage
       src={image}
       alt=""
       loading="lazy"
-      className="aspect-[4/3] w-full rounded-[1.5rem] object-cover"
-      fallbackClassName="flex aspect-[4/3] w-full items-center justify-center rounded-[1.5rem] bg-muted text-sm text-muted-foreground"
-      fallbackLabel="Add an image"
+      className="aspect-[4/3] w-full rounded-[var(--radius)] object-cover"
+      fallbackClassName="flex aspect-[4/3] w-full items-center justify-center rounded-[var(--radius)] border border-border/70 bg-muted text-6xl font-medium uppercase tracking-[0.24em] text-primary/60"
+      fallbackLabel={shop.name.slice(0, 2).toUpperCase()}
     />
   );
 
   return (
-    <section className={`grid items-center gap-8 md:grid-cols-2 ${right ? '' : ''}`}>
-      {right ? (
-        <>
-          <div>
-            <h2 className="text-3xl font-semibold tracking-tight">{text(section.props, 'heading')}</h2>
-            <p className="mt-3 text-sm leading-relaxed text-muted-foreground">
-              {text(section.props, 'body')}
-            </p>
-          </div>
-          {picture}
-        </>
-      ) : (
-        <>
-          {picture}
-          <div>
-            <h2 className="text-3xl font-semibold tracking-tight">{text(section.props, 'heading')}</h2>
-            <p className="mt-3 text-sm leading-relaxed text-muted-foreground">
-              {text(section.props, 'body')}
-            </p>
-          </div>
-        </>
-      )}
-    </section>
+    <Section resolved={resolved}>
+      <div className="grid items-center gap-8 md:grid-cols-2">
+        {right ? (
+          <>
+            {copy}
+            {picture}
+          </>
+        ) : (
+          <>
+            {picture}
+            {copy}
+          </>
+        )}
+      </div>
+    </Section>
   );
 }
 
@@ -433,9 +615,9 @@ function Faq({ resolved }: SectionProps) {
   }
 
   return (
-    <Section>
-      <SectionHeading text={text(section.props, 'heading')} sub={text(section.props, 'subheading')} />
-      <dl className="space-y-3" id={section.id}>
+    <Section resolved={resolved}>
+      <SectionHeading display={resolved.layout.display} text={text(section.props, 'heading')} sub={text(section.props, 'subheading')} />
+      <dl className="space-y-3">
         {items.map((item: Record<string, unknown>, i: number) => (
           <div key={i} className="rounded-lg border bg-card p-4">
             <dt className="font-medium">{text(item, 'q')}</dt>
@@ -455,8 +637,8 @@ function FeatureList({ resolved }: SectionProps) {
   }
 
   return (
-    <Section>
-      <SectionHeading text={text(section.props, 'heading')} sub={text(section.props, 'subheading')} />
+    <Section resolved={resolved}>
+      <SectionHeading display={resolved.layout.display} text={text(section.props, 'heading')} sub={text(section.props, 'subheading')} />
       <ul className="grid gap-3 sm:grid-cols-3">
         {items.map((item, i) => (
           <li key={i} className="rounded-lg border bg-card p-4 text-sm font-medium">
@@ -499,7 +681,7 @@ function Gallery({ resolved }: SectionProps) {
   }
 
   return (
-    <Section>
+    <Section resolved={resolved}>
       <div
         className="grid gap-3"
         style={{ gridTemplateColumns: `repeat(${columns}, minmax(0, 1fr))` }}
@@ -535,7 +717,7 @@ function Video({ resolved }: SectionProps) {
   }
 
   return (
-    <Section>
+    <Section resolved={resolved}>
       <div className="aspect-video w-full overflow-hidden rounded-lg bg-black">
         {isEmbed ? (
           <iframe
@@ -567,8 +749,8 @@ function Map({ resolved }: SectionProps) {
   }
 
   return (
-    <Section>
-      <SectionHeading text={text(section.props, 'heading', 'Find us')} />
+    <Section resolved={resolved}>
+      <SectionHeading display={resolved.layout.display} text={text(section.props, 'heading', 'Find us')} />
       {/* A link, not an embedded iframe. A third-party map iframe on every storefront page is a
           cookie banner and a tracking script the shop never asked for; a link opens it only when
           the customer wants directions. */}
@@ -629,8 +811,8 @@ function Testimonials({ resolved }: SectionProps) {
     // Reviews arrive in Phase 5. Saying so is better than an empty carousel, because an empty
     // block reads as "this shop has no customers".
     return (
-      <Section>
-        <SectionHeading text={text(section.props, 'heading', 'What customers say')} />
+      <Section resolved={resolved}>
+        <SectionHeading display={resolved.layout.display} text={text(section.props, 'heading', 'What customers say')} />
         <p className="rounded-lg border border-dashed p-6 text-center text-sm text-muted-foreground">
           Customer reviews arrive in Phase 5.
         </p>
@@ -639,8 +821,8 @@ function Testimonials({ resolved }: SectionProps) {
   }
 
   return (
-    <Section>
-      <SectionHeading text={text(section.props, 'heading', 'What customers say')} />
+    <Section resolved={resolved}>
+      <SectionHeading display={resolved.layout.display} text={text(section.props, 'heading', 'What customers say')} />
       <div className="grid gap-4 sm:grid-cols-3">
         {items.map((item: Record<string, unknown>, i: number) => (
           <figure key={i} className="rounded-lg border bg-card p-5">
@@ -691,7 +873,7 @@ function HtmlSection({ resolved }: SectionProps) {
 }
 
 function SiteHeader({ resolved }: SectionProps) {
-  const { section, shop } = resolved;
+  const { section, shop, layout } = resolved;
   const props = section.props ?? {};
   const links = Array.isArray(props.links) ? props.links : [];
   // A header with no links still shows the shop name and a menu of the shop's own categories, so an
@@ -703,17 +885,153 @@ function SiteHeader({ resolved }: SectionProps) {
   const menu = links.length > 0 ? links : fallbackLinks;
   const sticky = props.sticky !== false;
 
+  const logo =
+    props.showLogo !== false && shop.logoUrl ? (
+      <span className="size-9 shrink-0 overflow-hidden rounded-full bg-secondary">
+        <SafeImage
+          src={shop.logoUrl}
+          alt=""
+          loading="eager"
+          className="size-full object-cover"
+          fallbackClassName="grid size-full place-items-center text-[11px] font-semibold text-muted-foreground"
+          fallbackLabel={shop.name.slice(0, 2).toUpperCase()}
+        />
+      </span>
+    ) : null;
+
+  const brand = (nameClass: string) => (
+    <a href={`/s/${shop.slug}`} className="flex min-w-0 items-center gap-2.5">
+      {logo}
+      {props.showShopName !== false ? (
+        <span className={`truncate ${nameClass}`}>{shop.name}</span>
+      ) : null}
+    </a>
+  );
+
+  /**
+   * The menu, in three typographic registers.
+   *
+   * <p>The pill header styles each link as its own hoverable lozenge; the bar and masthead treat
+   * the menu as a single line of text, which is what makes a commerce bar read as chrome rather
+   * than as another card.
+   */
+  const nav = (navClass: string, itemClass: string) => (
+    <nav aria-label="Shop menu" className={navClass}>
+      <ul className="flex flex-wrap items-center gap-x-5 gap-y-1">
+        {menu.map((item: Record<string, unknown>, i: number) => (
+          <li key={`${text(item, 'label', 'link')}-${i}`}>
+            <SafeHref href={text(item, 'href', '#')} className={itemClass}>
+              {text(item, 'label', 'Link')}
+            </SafeHref>
+          </li>
+        ))}
+      </ul>
+    </nav>
+  );
+
+  const search =
+    props.showSearch === false ? null : (
+      /*
+        A link, not a label. This was a `<span>` containing a magnifier and the word "Search" —
+        it looked like a control, could not be clicked, and had no destination. The platform's
+        `/search` route did not exist either; it does now, and this points at it.
+      */
+      <a
+        href="/search"
+        className="inline-flex shrink-0 items-center gap-2 text-sm text-muted-foreground transition-colors hover:text-foreground"
+      >
+        <svg viewBox="0 0 24 24" className="size-4" fill="none" stroke="currentColor" strokeWidth={2} aria-hidden>
+          <circle cx="11" cy="11" r="7" />
+          <path d="m20 20-3.5-3.5" strokeLinecap="round" />
+        </svg>
+        <span className="hidden sm:inline">Search</span>
+        <span className="sr-only sm:hidden">Search</span>
+      </a>
+    );
+
+  /*
+    Four header shapes, because a header is the first thing that says what kind of shop this is.
+    A floating pill suits a small boutique; a bordered bar suits a dense catalogue; a centred
+    wordmark suits fashion and jewellery; a borderless masthead suits a café or a homeware label.
+    The bar is offset from the platform bar above it — two elements pinned to `top: 0` do not
+    stack, and the shop header would slide underneath.
+  */
+  if (layout.header === 'bar') {
+    return (
+      <header
+        className={`${
+          sticky ? 'sticky top-[4.5rem] z-30' : ''
+        } -mx-4 border-b border-border bg-background/95 px-4 backdrop-blur-xl sm:-mx-6 sm:px-6`}
+        data-section="site-header"
+      >
+        <div className="flex h-16 items-center gap-6">
+          {brand('font-semibold')}
+          {nav(
+            'hidden flex-1 md:block',
+            'text-sm text-muted-foreground transition-colors hover:text-foreground',
+          )}
+          <div className="ml-auto">{search}</div>
+        </div>
+      </header>
+    );
+  }
+
+  if (layout.header === 'centered') {
+    return (
+      <header
+        className={`${
+          sticky ? 'sticky top-[4.5rem] z-30' : ''
+        } -mx-4 border-b border-border bg-background/95 px-4 backdrop-blur-xl sm:-mx-6 sm:px-6`}
+        data-section="site-header"
+      >
+        <div className="flex flex-col items-center gap-3 py-5">
+          <a
+            href={`/s/${shop.slug}`}
+            className="flex items-center gap-2 text-xl font-semibold tracking-[0.02em]"
+          >
+            {logo}
+            {shop.name}
+          </a>
+          <div className="flex flex-wrap items-center justify-center gap-x-6 gap-y-2">
+            {nav(
+              '',
+              'text-xs uppercase tracking-[0.14em] text-muted-foreground transition-colors hover:text-foreground',
+            )}
+            {search}
+          </div>
+        </div>
+      </header>
+    );
+  }
+
+  if (layout.header === 'minimal') {
+    return (
+      <header
+        className={`${
+          sticky ? 'sticky top-[4.5rem] z-30' : ''
+        } -mx-4 bg-background/90 px-4 backdrop-blur-xl sm:-mx-6 sm:px-6`}
+        data-section="site-header"
+      >
+        <div className="flex items-center justify-between gap-6 border-b border-border/60 py-5">
+          <a
+            href={`/s/${shop.slug}`}
+            className="flex min-w-0 items-center gap-2.5 text-base font-medium uppercase tracking-[0.18em]"
+          >
+            {logo}
+            <span className="truncate">{shop.name}</span>
+          </a>
+          {nav(
+            'hidden md:block',
+            'text-sm text-muted-foreground transition-colors hover:text-foreground',
+          )}
+          {search}
+        </div>
+      </header>
+    );
+  }
+
   return (
     <header
-      /*
-        Offset from the top by the height of the platform bar above it. Both are `sticky`, and two
-        elements pinned to `top: 0` do not stack — the shop header would slide underneath the
-        platform bar and disappear exactly when a customer scrolled to use it.
-
-        The bar itself is a pill, matching the platform chrome above. A shop's header is the first
-        thing that says "you are in this shop now", and a full-width strip with a hairline reads as
-        another divider in a page that already has several.
-      */
       className={`${sticky ? 'sticky top-[4.5rem] z-30' : ''} -mx-4 px-4 pb-3 pt-4 sm:-mx-6 sm:px-6`}
       data-section="site-header"
     >
@@ -722,18 +1040,7 @@ function SiteHeader({ resolved }: SectionProps) {
           href={`/s/${shop.slug}`}
           className="flex min-w-0 items-center gap-2.5 rounded-full py-0.5 pl-0.5 pr-2"
         >
-          {props.showLogo !== false && shop.logoUrl ? (
-            <span className="size-9 shrink-0 overflow-hidden rounded-full bg-secondary">
-              <SafeImage
-                src={shop.logoUrl}
-                alt=""
-                loading="eager"
-                className="size-full object-cover"
-                fallbackClassName="grid size-full place-items-center text-[11px] font-semibold text-muted-foreground"
-                fallbackLabel={shop.name.slice(0, 2).toUpperCase()}
-              />
-            </span>
-          ) : null}
+          {logo}
           {props.showShopName !== false ? (
             <span className="truncate font-semibold">{shop.name}</span>
           ) : null}
@@ -751,20 +1058,10 @@ function SiteHeader({ resolved }: SectionProps) {
                 </SafeHref>
               </li>
             ))}
-            {menu.length === 0 ? (
-              <li className="px-3 py-1.5 text-xs text-muted-foreground">
-                Add links, or publish some products so your categories appear here.
-              </li>
-            ) : null}
           </ul>
         </nav>
 
         {props.showSearch !== false ? (
-          /*
-            A link, not a label. This was a `<span>` containing a magnifier and the word "Search" —
-            it looked like a control, could not be clicked, and had no destination. The platform's
-            `/search` route did not exist either; it does now, and this points at it.
-          */
           <a
             href="/search"
             className="ml-auto inline-flex shrink-0 items-center gap-2 rounded-full border border-border bg-background px-3.5 py-1.5 text-sm text-muted-foreground transition-colors hover:text-foreground sm:ml-0"
@@ -869,18 +1166,62 @@ export function UnknownSection({ resolved }: SectionProps) {
 // Layout helpers
 // ---------------------------------------------------------------------------
 
-function Section({ children }: { children: ReactNode }) {
-  return <section className="py-8">{children}</section>;
+function Section({ resolved, children }: { resolved?: ResolvedSection; children: ReactNode }) {
+  /*
+    A theme that turns bands on gets a tinted stripe for every section whose props say
+    `tone: "muted"`. The negative margin cancels the renderer's gutter and the padding restores
+    it, so the stripe reaches the edge of the page column without any section knowing how wide
+    the column is. Alternating stripes are what give a dense catalogue a rhythm; without them a
+    long page of product grids reads as one undifferentiated scroll.
+  */
+  const banded =
+    resolved?.layout.bands === true &&
+    text(resolved.section.props, 'tone', 'default') === 'muted';
+  /*
+    The wrapper carries the section id. Every template's hero CTA is `href="#products"` and its
+    menu uses `#categories`, and browsers scroll to an element with that id — without one here,
+    those links were no-ops that looked like navigation. The only section that set an id of its
+    own was the FAQ, which would have been the one working anchor in the catalogue.
+  */
+  return (
+    <section
+      id={resolved?.section.id}
+      className={banded ? '-mx-4 bg-muted px-4 py-12 sm:-mx-6 sm:px-6' : 'py-8'}
+    >
+      {children}
+    </section>
+  );
 }
 
-function SectionHeading({ text: heading, sub }: { text: string; sub?: string }) {
+/**
+ * A section heading in the theme's display register.
+ *
+ * <p>Three scales, not one enlarged one: `editorial` is a light, large, tightly tracked headline
+ * for fashion and jewellery; `compact` is small caps for a dense catalogue where headings are
+ * signposts, not statements; `default` stays in the middle.
+ */
+function SectionHeading({
+  text: heading,
+  sub,
+  display = 'default',
+}: {
+  text: string;
+  sub?: string;
+  display?: 'default' | 'editorial' | 'compact';
+}) {
   if (!heading && !sub) {
     return null;
   }
+  const headingClass =
+    display === 'editorial'
+      ? 'text-3xl font-medium tracking-[-0.02em] sm:text-4xl'
+      : display === 'compact'
+        ? 'text-lg font-semibold uppercase tracking-[0.14em]'
+        : 'text-2xl font-bold tracking-tight';
   return (
-    <div className="mb-5">
-      {heading ? <h2 className="text-2xl font-bold tracking-tight">{heading}</h2> : null}
-      {sub ? <p className="mt-1 text-sm text-muted-foreground">{sub}</p> : null}
+    <div className="mb-6">
+      {heading ? <h2 className={headingClass}>{heading}</h2> : null}
+      {sub ? <p className="mt-2 text-sm text-muted-foreground">{sub}</p> : null}
     </div>
   );
 }

@@ -6274,6 +6274,8 @@ are separate fields.
 3. **The seeder still never overwrites.** A code that already exists is left alone, so an admin's
    edit or an unpublish survives a restart. The consequence is stated in the class: a change to a
    shipped file only reaches shops that install it afterwards — everyone else holds their own copy.
+   *Reversed in Appendix AO:* refusing to touch an existing row froze every developer's catalogue,
+   so the seeder now reconciles shipped fields while preserving publication state.
 4. **One bad file does not cost the catalogue.** Files are parsed and seeded independently. The
    validator rejecting a document is logged with the filename and skipped; startup continues. In
    tests the seeder is off, so `ThemeTemplateCatalogueTest` validates every shipped file directly —
@@ -6325,9 +6327,193 @@ gallery          chips: All + 13 shelves; Fashion filter leaves exactly 1 card;
 
 ### Still to do from here
 
-- **"Remove draft"** is now more visible than before: "Your themes" shows every mount, including
-  two stale General Storefront drafts and a "Default" from earlier tests. The delete endpoint
-  exists; there is no button.
+- **"Remove draft"** — done in Appendix AO.
 - The hero's image placeholder dominates a template preview until a shop uploads its own photograph
   (palette-aware, so it reads as a block rather than a broken image — but it is still empty).
+  *Addressed in Appendix AO:* no image now renders a typographic hero.
 - Pages / Menus / Blog remain absent, as recorded in Appendix AM.
+
+## Appendix AO — Themes that look like different websites (Appearance, part 3, 26 Oct 2026)
+
+Appendix AN shipped fourteen templates with fourteen palettes and one skeleton. Looking at the
+gallery was the test: every card had the same pill header, the same split hero, the same bordered
+product card and the same vertical rhythm, so the shelf read as one theme in fourteen colourways.
+This appendix gives the shelf structure, and adds the delete control AN recorded as missing.
+
+### What was wrong, precisely
+
+Tokens are enough to change a mood and not enough to change a page. Every axis a person reads
+first — where the logo sits, whether the hero is a photograph, a block or a headline, whether a
+product is a tile or an image with a caption, whether section two sits on a different surface —
+was hard-coded in `sections.tsx` and shared by all fourteen. Adding a fifteenth palette was never
+going to fix that.
+
+Two smaller faults surfaced while checking the work:
+
+1. **The header's category fallback was always empty.** `resolveSection` filled `categories` only
+   for a section whose `source` is `shop_categories`; the header read `resolved.categories` to
+   build a menu when it had no links of its own, so it always got nothing. The consequence was
+   worse than a missing menu: the renderer then printed the owner-facing sentence "Add links, or
+   publish some products so your categories appear here." in the customer-facing masthead, next to
+   a category grid that visibly listed the categories.
+2. **`image-with-text` told customers to "Add an image".** The fallback label was written for the
+   owner and rendered on the storefront. It is gone; a section with no image is now a text block,
+   and a failed image falls back to a monogram plate.
+
+### The layout block
+
+`ThemeConfig` gains an optional `layout` object, defaulted to the pre-catalogue look:
+
+| Switch | Values | What it changes |
+|---|---|---|
+| `width` | `standard` · `wide` · `full` | the page column: 1152, 1440, or the window |
+| `header` | `pill` · `bar` · `centered` · `minimal` | the masthead's markup, not its colours |
+| `card` | `bordered` · `plain` · `editorial` | product tiles, borderless tiles, lookbook |
+| `bands` | `false` · `true` | whether `tone: "muted"` sections paint a stripe |
+| `display` | `default` · `editorial` · `compact` | heading scale, case and tracking |
+
+The hero gains two variants beside `split-image` and `centered`:
+
+- **`panel`** — a solid brand block with large type, no photograph. It is a designed homepage for
+  the shops that have not uploaded one, and the honest fallback for an overlay whose image is
+  missing.
+- **`overlay`** — the image (or the panel, when there is none) with the copy set over it.
+
+**Defaults reproduce the old rendering exactly**, so a theme installed before this appendix keeps
+its layout. The server validates the same closed sets as the zod schema, unknown keys included: a
+typo must fail at save time, not reach the renderer and silently fall back.
+
+### The renderer owns the column now
+
+`layout.width` lives in `ThemeRenderer`, not in the storefront page. Before this, the customer page
+wrapped the renderer in `max-w-6xl` while the console preview rendered it at 1280 — the preview and
+the live page were not the same page, which is the one thing an editor preview may not be. The
+storefront's page wrapper is now bare and the renderer supplies the gutters and the bottom
+space. Section bands cancel those gutters with a matching negative margin, so a stripe reaches
+the edge of the column without any section knowing how wide the column is.
+
+### The theme paints its own page
+
+Writing the tokens onto a scoped element was only half of applying them: nothing consumed
+`--background`, so a theme's background colour appeared only on the few elements that asked for
+`bg-background` — and the page around them stayed the platform's cream. Every tinted template
+(the parchment, the blush, the near-white green) was invisible in the gallery and on the
+storefront.
+
+The renderer root now carries `bg-background text-foreground`, and the marketplace shell stops
+imposing a column on `/s/*` routes. Before this, every storefront sat inside
+`<main class="mx-auto max-w-7xl px-4 py-8">`, so `layout.width: full` could never reach the
+window, the shop's announcement bar started 32px below the platform header, and the page nested a
+`<main>` inside the shell's `<main>`. The shell keeps its header and footer — a storefront is still
+part of the marketplace — and hands the page width and surface to the theme.
+
+**A stray colour in the live theme, repaired and disclosed.** The live "My Pharmacy" theme stored
+`background: #e11d48` (rose), with a sky accent and slate borders — the swatches from the
+customiser, saved at some point. Nothing painted that colour until this appendix, except the
+header's search pill, which was rendering as a solid pink control. The page background was
+repaired to white and the surface tokens to a coherent pale green (primary stays the shop's
+green; radius, fonts and layout untouched). This is the shop's data, not a template.
+
+### Anchors that go somewhere
+
+Every template's hero CTA is `href="#products"` and its menu uses `#categories`. Browsers scroll to
+an element with that id; the section wrapper had none, so every one of those links set the hash and
+did nothing. The wrapper now carries the section's id (the FAQ, which had claimed its own, gives it
+up so there is one element per id). Two shipped templates — General Storefront and Pharmacy Trust
+— also pointed at `#products` while their grid's id was `all-products`; both were renamed, as were
+the four per-type defaults in `DefaultTemplates.java`. The live theme was repaired the same way.
+Clicking "Shop now" on `/s/my-shop` now scrolls to the product grid (`scrollY 1331`, grid at the
+top of the viewport).
+
+### The fourteen, re-drawn
+
+Each template was rewritten around a category's actual conventions rather than a shared skeleton:
+
+| Template | Header | Hero | Cards | Rhythm |
+|---|---|---|---|---|
+| Grocery Fresh | commerce bar | full-bleed produce (panel when empty) | bordered | dense, alternating bands |
+| Fashion Edit | centred wordmark | black lookbook | editorial | white space, no bands |
+| Electronics Hub | commerce bar | navy panel | bordered | dense, bands |
+| Café & Bakery | borderless masthead | warm overlay | plain | serif, no bands |
+| Beauty Counter | centred wordmark | centred type | plain | soft bands |
+| Home & Living | borderless masthead | split | plain | calm bands |
+| Jewellery Atelier | centred wordmark | gold panel | editorial | sparse, no bands |
+| The Bookshop | commerce bar | centred serif | plain | parchment bands |
+| Sports Active | commerce bar | black panel, caps | plain | high contrast |
+| Pet Corner | floating pill | split | bordered | friendly bands |
+| Flower Studio | centred wordmark | rose overlay | plain | romantic, no bands |
+| Hardware & Tools | commerce bar | steel panel | bordered | utilitarian bands |
+| Pharmacy Trust | commerce bar | split | bordered | clinical bands |
+| General Storefront | floating pill | split | bordered | the neutral original |
+
+Palettes were checked for WCAG AA on the four text pairs that matter — body on background, button
+text on primary, muted text on muted, and accent text on accent — across all fourteen; the lowest
+ratio is 5.02 (Pet Corner), all above 4.5.
+
+**No image is not a hole to fill.** A split or centred hero without a photograph used to render a
+4:3 grey rectangle opposite the copy: the largest object on the page and the first thing a
+customer saw. It now renders a typographic hero (left-aligned for split, centred for centred).
+The photograph is an upgrade, not a missing piece.
+
+### The seeder reconciles shipped content
+
+AN's rule — never touch an existing code — meant the fourteen files could change and every
+existing database would keep the old rows, including the developer's. The seeder now updates an
+existing row's name, description, shelf, type, order and config when they differ from the file.
+What it deliberately does not touch is publication state and `active`: an admin who withdraws a
+template does not find it back after a restart. Configs are compared as JSON trees, because
+`jsonb` reorders keys, so a textual comparison would rewrite the catalogue on every boot. The boot
+after this appendix logged fourteen refreshes; the next logged none.
+
+Installed themes are copies in `shop_theme`, so no shop's storefront changed when the templates
+were refreshed.
+
+### Removing a draft
+
+The delete endpoint existed since Phase 3 and had no control. Each draft card now carries a
+**Remove** action beside *Edit draft*; clicking it turns the strip into "Delete this draft?
+Customers keep seeing the live theme." with **Delete** and **Keep**. Two clicks, because the strip
+also holds the edit button and a mis-aimed destructive action is not recoverable. Published themes
+have no Remove — the server refuses them anyway.
+
+### Verification
+
+```
+backend          6093 tests, 0 failures, 0 errors, 0 skipped   (full clean run; +6 layout tests)
+theme tests      30 tests (validator incl. layout), 0 failures
+typecheck        10/10 packages
+check-ui         ALL PAGES OK
+check-contrast   CONTRAST OK
+check-appearance APPEARANCE OK (13 templates, 4 installed themes, no console errors)
+palette audit    14/14 templates pass WCAG AA on body, button, muted and accent pairs (min 5.02)
+delete flow      "Your themes" 5 -> 4, status names the draft, count still 4 after reload;
+                 the installed Grocery Fresh draft was deleted the same way, 4 after cleanup
+full page        Grocery Fresh rendered in the customiser with bands, bordered cards, trust
+                 strip and footer; live /s/my-shop 200 with the layout defaults and its repaired
+                 surface
+surface          live storefront computes to the theme's #ffffff (not the platform cream); the
+                 search pill is white again; shell width 1280 with 0px padding on /s/*
+anchors          /s/my-shop has one #products; "Shop now" scrolls to it (grid top 0)
+gallery shots    13 cards captured; header/hero/card combinations visibly differ; header
+                 fallback links appear; no placeholder rectangles
+```
+
+### Data changed in the development database (disclosed)
+
+| Change | Rows |
+|---|---|
+| `theme_template` refreshed from the shipped files | all 14 |
+| `shop_theme` deleted | one stale "Grocery Fresh" draft, and the draft installed for the full-page screenshot |
+| `shop_theme.config.tokens` repaired | the live "My Pharmacy" theme: `background` rose → `#ffffff`, `muted`/`accent`/`border` → pale green; primary, radius and fonts unchanged |
+| `shop_theme.config.sections[].id` repaired | the live theme's product grid: `all-products` → `products`, so its hero CTA and menu anchor resolve |
+
+The two stale General Storefront drafts and the Default draft were left in place.
+
+### What is not done
+
+- **The layout block is not editable in the customiser.** It is template-owned. Exposing header
+  style and card style is a natural next step; page width and display scale are less obviously an
+  owner's decision.
+- **No per-template full-page preview** before installing, still: the card is the preview.
+- **The console still has no phone layout**, recorded in AM and unchanged here.
+- Pages / Menus / Blog remain absent.

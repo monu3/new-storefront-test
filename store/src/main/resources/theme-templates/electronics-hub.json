@@ -9,13 +9,13 @@
     "schemaVersion": 1,
     "tokens": {
       "primary": "#1d4ed8",
-      "background": "#f8fafc",
+      "background": "#ffffff",
       "foreground": "#0f172a",
-      "muted": "#eef2f7",
-      "accent": "#c7d7fe",
-      "border": "#dbe2ea",
+      "muted": "#f1f5f9",
+      "accent": "#e2e8f0",
+      "border": "#dbe3ec",
       "ring": "#1d4ed8",
-      "fontHeading": "'Trebuchet MS', 'Segoe UI', sans-serif",
+      "fontHeading": "Arial, Helvetica, sans-serif",
       "fontBody": "Arial, Helvetica, sans-serif",
       "radius": "0.5rem",
       "mode": "light"
@@ -43,11 +43,10 @@
       {
         "id": "hero",
         "type": "hero",
-        "variant": "split-image",
+        "variant": "panel",
         "props": {
           "heading": "Tech that keeps up with you",
           "subheading": "Phones, laptops and accessories with a local warranty and a counter you can walk into.",
-          "imageUrl": "asset:HERO/main",
           "cta": {
             "label": "Browse the shop",
             "href": "#products"
@@ -61,7 +60,8 @@
           "columns": 4,
           "source": "shop_categories",
           "limit": 8,
-          "heading": "Browse by category"
+          "heading": "Browse by category",
+          "tone": "muted"
         }
       },
       {
@@ -83,7 +83,8 @@
             "Warranty honoured at our own counter",
             "Checked and tested before dispatch",
             "Seven-day replacement on dead on arrival"
-          ]
+          ],
+          "tone": "muted"
         }
       },
       {
@@ -111,7 +112,8 @@
             "Local warranty",
             "Tested before dispatch",
             "Cash on delivery"
-          ]
+          ],
+          "tone": "muted"
         }
       },
       {
@@ -139,6 +141,13 @@
       "assetHandle": "footer-main",
       "columns": 3,
       "showPaymentBadges": true
+    },
+    "layout": {
+      "width": "wide",
+      "header": "bar",
+      "card": "bordered",
+      "bands": true,
+      "display": "compact"
     }
   }
 }

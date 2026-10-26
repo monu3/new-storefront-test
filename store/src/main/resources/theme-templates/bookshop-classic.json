@@ -9,15 +9,15 @@
     "schemaVersion": 1,
     "tokens": {
       "primary": "#1f4037",
-      "background": "#faf7ef",
-      "foreground": "#1c241f",
-      "muted": "#f1ece0",
-      "accent": "#d9d2bd",
-      "border": "#e1dac9",
+      "background": "#faf6ea",
+      "foreground": "#1a231e",
+      "muted": "#f2ecdc",
+      "accent": "#e6dcc3",
+      "border": "#e3d9c3",
       "ring": "#1f4037",
-      "fontHeading": "'Iowan Old Style', 'Palatino Linotype', Georgia, serif",
-      "fontBody": "Georgia, serif",
-      "radius": "0.25rem",
+      "fontHeading": "Georgia, 'Times New Roman', serif",
+      "fontBody": "Georgia, 'Times New Roman', serif",
+      "radius": "0.125rem",
       "mode": "light"
     },
     "sections": [
@@ -43,7 +43,7 @@
       {
         "id": "hero",
         "type": "hero",
-        "variant": "split-image",
+        "variant": "centered",
         "props": {
           "heading": "A shelf for every reader",
           "subheading": "Fiction, history and children's books, chosen by people who read them. Ask us for a recommendation and we will actually answer.",
@@ -61,7 +61,8 @@
           "columns": 4,
           "source": "shop_categories",
           "limit": 8,
-          "heading": "Browse the shelves"
+          "heading": "Browse the shelves",
+          "tone": "muted"
         }
       },
       {
@@ -128,6 +129,13 @@
       "assetHandle": "footer-main",
       "columns": 3,
       "showPaymentBadges": true
+    },
+    "layout": {
+      "width": "standard",
+      "header": "bar",
+      "card": "plain",
+      "bands": true,
+      "display": "editorial"
     }
   }
 }

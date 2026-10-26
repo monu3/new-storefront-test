@@ -98,6 +98,41 @@ export const themeTokensSchema = z.object({
 export type ThemeTokens = z.infer<typeof themeTokensSchema>;
 
 /**
+ * Page-level layout switches.
+ *
+ * <p><b>Why tokens are not enough.</b> Colour and type can make two storefronts feel different,
+ * but they cannot make them <em>look</em> different: every section still sits in the same pill
+ * header and the same bordered card. A catalogue of fourteen templates built only from tokens is
+ * fourteen recolourings of one page, which is exactly what it looked like before this existed.
+ *
+ * <p>These five switches are the structural axes that matter above the fold, chosen because each
+ * one changes markup rather than a value:
+ *
+ * <ul>
+ *   <li>{@code width} — a contained column, a wide one, or the full window.</li>
+ *   <li>{@code header} — the floating pill, a bordered commerce bar, a centred wordmark, or a
+ *       borderless masthead.</li>
+ *   <li>{@code card} — bordered tiles, borderless product tiles, or an editorial lookbook.</li>
+ *   <li>{@code bands} — whether sections marked {@code tone: "muted"} paint a full-width band,
+ *       which is what gives a dense shop its rhythm.</li>
+ *   <li>{@code display} — the heading scale: default, oversized editorial, or compact caps.</li>
+ * </ul>
+ *
+ * <p>Defaults reproduce the pre-catalogue look exactly, so every existing theme keeps rendering
+ * as it did. Values are a closed set on purpose: the server validates the same list, and an
+ * unknown value would otherwise reach the renderer and silently fall back to the default.
+ */
+export const themeLayoutSchema = z.object({
+  width: z.enum(['standard', 'wide', 'full']).default('standard'),
+  header: z.enum(['pill', 'bar', 'centered', 'minimal']).default('pill'),
+  card: z.enum(['bordered', 'plain', 'editorial']).default('bordered'),
+  bands: z.boolean().default(false),
+  display: z.enum(['default', 'editorial', 'compact']).default('default'),
+});
+
+export type ThemeLayout = z.infer<typeof themeLayoutSchema>;
+
+/**
  * A navigation link.
  *
  * <p>Site-relative, an absolute `https` URL, or a same-page fragment.
@@ -145,6 +180,7 @@ export const themeConfigSchema = z
   .object({
     schemaVersion: z.number().int().positive().default(THEME_SCHEMA_VERSION),
     tokens: themeTokensSchema.default({}),
+    layout: themeLayoutSchema.default({}),
     sections: z.array(sectionSchema).default([]),
   nav: z.object({ menu: z.array(navItemSchema).default([]) }).default({ menu: [] }),
   footer: z
@@ -215,6 +251,7 @@ function emptyTheme(): ThemeConfig {
   return {
     schemaVersion: THEME_SCHEMA_VERSION,
     tokens: {},
+    layout: themeLayoutSchema.parse({}),
     sections: [],
     nav: { menu: [] },
     footer: {},

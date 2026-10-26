@@ -8,16 +8,16 @@
   "config": {
     "schemaVersion": 1,
     "tokens": {
-      "primary": "#8a4b2a",
-      "background": "#fffaf3",
-      "foreground": "#2a1a10",
-      "muted": "#f7ecdf",
-      "accent": "#e7cba9",
-      "border": "#ecdcc9",
-      "ring": "#8a4b2a",
+      "primary": "#6f3b22",
+      "background": "#fdf8f1",
+      "foreground": "#2a1a12",
+      "muted": "#f4e9dc",
+      "accent": "#ead6bf",
+      "border": "#e6d5c1",
+      "ring": "#6f3b22",
       "fontHeading": "Georgia, 'Times New Roman', serif",
-      "fontBody": "Verdana, Geneva, sans-serif",
-      "radius": "1.5rem",
+      "fontBody": "Arial, Helvetica, sans-serif",
+      "radius": "0.25rem",
       "mode": "light"
     },
     "sections": [
@@ -43,7 +43,7 @@
       {
         "id": "hero",
         "type": "hero",
-        "variant": "centered",
+        "variant": "overlay",
         "props": {
           "heading": "Coffee, bread and something sweet",
           "subheading": "A neighbourhood bakery and café. Order a loaf, a box of pastries or beans for the week.",
@@ -122,6 +122,13 @@
       "assetHandle": "footer-main",
       "columns": 3,
       "showPaymentBadges": true
+    },
+    "layout": {
+      "width": "standard",
+      "header": "minimal",
+      "card": "plain",
+      "bands": false,
+      "display": "editorial"
     }
   }
 }

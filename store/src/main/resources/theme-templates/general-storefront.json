@@ -60,7 +60,8 @@
         "props": {
           "columns": 4,
           "source": "shop_categories",
-          "limit": 8
+          "limit": 8,
+          "tone": "muted"
         }
       },
       {
@@ -83,7 +84,7 @@
         }
       },
       {
-        "id": "all-products",
+        "id": "products",
         "type": "product-grid",
         "props": {
           "source": "latest",
@@ -99,7 +100,8 @@
             "Cash on delivery",
             "Bank transfer",
             "Secure checkout"
-          ]
+          ],
+          "tone": "muted"
         }
       },
       {
@@ -123,6 +125,13 @@
       "assetHandle": "footer-main",
       "columns": 3,
       "showPaymentBadges": true
+    },
+    "layout": {
+      "width": "standard",
+      "header": "pill",
+      "card": "bordered",
+      "bands": true,
+      "display": "default"
     }
   }
 }

@@ -87,19 +87,21 @@ export default async function ShopHome({
   if (!data) {
     return (
       <StorefrontLayout>
-        <main className="mx-auto max-w-3xl px-4 py-24 text-center">
+        <div className="mx-auto max-w-3xl px-4 py-24 text-center">
           <h1 className="text-2xl font-bold">Shop not found</h1>
           <p className="mt-2 text-sm text-muted-foreground">
             This shop may not exist, or it may not be published yet.
           </p>
-        </main>
+        </div>
       </StorefrontLayout>
     );
   }
 
   return (
     <StorefrontLayout>
-      <main className="mx-auto max-w-6xl px-4 pb-16">
+      {/* The theme owns the column width (layout.width) and the page surface, so this wrapper
+          must impose neither. The shell already provides the `main` landmark. */}
+      <div>
         <ThemeRenderer
           config={data.themeConfig ?? {}}
           data={{
@@ -116,7 +118,7 @@ export default async function ShopHome({
             assets: data.assets ?? [],
           }}
         />
-      </main>
+      </div>
     </StorefrontLayout>
   );
 }

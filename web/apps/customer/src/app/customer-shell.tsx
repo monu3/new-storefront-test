@@ -195,7 +195,23 @@ export function CustomerShell({ children }: { children: ReactNode }) {
         ) : null}
       </header>
 
-      <main id="main" className="mx-auto w-full max-w-7xl flex-1 px-4 py-8 sm:px-6">
+      {/*
+        A shop's page is not a marketplace page.
+
+        <p>Every route used to sit inside this column, so a theme that asked to be full-width or
+        wide could never be wider than 1280px minus these gutters, and the shop's own announcement
+        bar started 32px below the platform header. The theme now owns its column
+        (`layout.width`), which only means something if the shell stops imposing one. The platform
+        header and footer stay: a storefront is still part of the marketplace.
+      */}
+      <main
+        id="main"
+        className={
+          pathname.startsWith('/s/')
+            ? 'flex-1'
+            : 'mx-auto w-full max-w-7xl flex-1 px-4 py-8 sm:px-6'
+        }
+      >
         {children}
       </main>
 

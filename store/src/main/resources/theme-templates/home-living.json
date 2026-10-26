@@ -8,16 +8,16 @@
   "config": {
     "schemaVersion": 1,
     "tokens": {
-      "primary": "#5b6650",
+      "primary": "#4f5d4a",
       "background": "#fbfaf6",
-      "foreground": "#23261f",
-      "muted": "#f0efe6",
-      "accent": "#dddcc8",
-      "border": "#e4e2d6",
-      "ring": "#5b6650",
-      "fontHeading": "'Gill Sans', 'Gill Sans MT', Calibri, sans-serif",
-      "fontBody": "Calibri, 'Segoe UI', sans-serif",
-      "radius": "0.875rem",
+      "foreground": "#1d231b",
+      "muted": "#f1efe7",
+      "accent": "#ddd8c8",
+      "border": "#e0dccf",
+      "ring": "#4f5d4a",
+      "fontHeading": "Georgia, 'Times New Roman', serif",
+      "fontBody": "Arial, Helvetica, sans-serif",
+      "radius": "0.25rem",
       "mode": "light"
     },
     "sections": [
@@ -43,7 +43,7 @@
       {
         "id": "hero",
         "type": "hero",
-        "variant": "centered",
+        "variant": "split-image",
         "props": {
           "heading": "Things for the home you actually live in",
           "subheading": "Ceramics, linen and small furniture, chosen for daily use rather than the shelf.",
@@ -81,7 +81,8 @@
           "columns": 4,
           "source": "shop_categories",
           "limit": 8,
-          "heading": "By room"
+          "heading": "By room",
+          "tone": "muted"
         }
       },
       {
@@ -92,7 +93,8 @@
             "Handmade in Nepal",
             "Care instructions included",
             "Delivery across the Valley"
-          ]
+          ],
+          "tone": "muted"
         }
       },
       {
@@ -128,6 +130,13 @@
       "assetHandle": "footer-main",
       "columns": 3,
       "showPaymentBadges": true
+    },
+    "layout": {
+      "width": "wide",
+      "header": "minimal",
+      "card": "plain",
+      "bands": true,
+      "display": "editorial"
     }
   }
 }

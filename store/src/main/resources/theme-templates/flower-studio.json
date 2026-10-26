@@ -10,14 +10,14 @@
     "tokens": {
       "primary": "#8c3b52",
       "background": "#fdf8f7",
-      "foreground": "#251418",
-      "muted": "#f9edef",
-      "accent": "#f2d3d9",
-      "border": "#eedae0",
+      "foreground": "#26141a",
+      "muted": "#fbeef0",
+      "accent": "#f3d9dd",
+      "border": "#eddadd",
       "ring": "#8c3b52",
       "fontHeading": "Georgia, 'Times New Roman', serif",
       "fontBody": "Arial, Helvetica, sans-serif",
-      "radius": "1.75rem",
+      "radius": "1rem",
       "mode": "light"
     },
     "sections": [
@@ -43,7 +43,7 @@
       {
         "id": "hero",
         "type": "hero",
-        "variant": "split-image",
+        "variant": "overlay",
         "props": {
           "heading": "Flowers for the days that matter",
           "subheading": "Hand-tied bouquets and seasonal stems, delivered across the Valley the same day.",
@@ -119,6 +119,13 @@
       "assetHandle": "footer-main",
       "columns": 3,
       "showPaymentBadges": true
+    },
+    "layout": {
+      "width": "standard",
+      "header": "centered",
+      "card": "plain",
+      "bands": false,
+      "display": "editorial"
     }
   }
 }

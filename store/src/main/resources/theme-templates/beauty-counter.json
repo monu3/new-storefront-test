@@ -9,15 +9,15 @@
     "schemaVersion": 1,
     "tokens": {
       "primary": "#9d4b63",
-      "background": "#fdf7f8",
-      "foreground": "#2b1620",
-      "muted": "#f7e9ee",
-      "accent": "#f0cdd8",
-      "border": "#ecd6dd",
+      "background": "#fffaf9",
+      "foreground": "#241417",
+      "muted": "#fbeef0",
+      "accent": "#f4dde1",
+      "border": "#efd9dd",
       "ring": "#9d4b63",
-      "fontHeading": "Baskerville, 'Palatino Linotype', Georgia, serif",
+      "fontHeading": "Georgia, 'Times New Roman', serif",
       "fontBody": "Arial, Helvetica, sans-serif",
-      "radius": "1.25rem",
+      "radius": "1rem",
       "mode": "light"
     },
     "sections": [
@@ -43,7 +43,7 @@
       {
         "id": "hero",
         "type": "hero",
-        "variant": "split-image",
+        "variant": "centered",
         "props": {
           "heading": "Skincare that earns its place",
           "subheading": "A short shelf of products we have used ourselves — cleansers, serums and sunscreens for Nepal's dust and sun.",
@@ -61,7 +61,8 @@
           "columns": 3,
           "source": "shop_categories",
           "limit": 6,
-          "heading": "Shop by category"
+          "heading": "Shop by category",
+          "tone": "muted"
         }
       },
       {
@@ -82,7 +83,8 @@
             "Authentic stock, sourced directly",
             "Samples so you can try before you buy",
             "No lectures about your skin"
-          ]
+          ],
+          "tone": "muted"
         }
       },
       {
@@ -118,6 +120,13 @@
       "assetHandle": "footer-main",
       "columns": 3,
       "showPaymentBadges": true
+    },
+    "layout": {
+      "width": "standard",
+      "header": "centered",
+      "card": "plain",
+      "bands": true,
+      "display": "editorial"
     }
   }
 }
