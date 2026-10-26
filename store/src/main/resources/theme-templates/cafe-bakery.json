@@ -1,0 +1,127 @@
+{
+  "code": "cafe-bakery",
+  "name": "Café & Bakery",
+  "category": "Food & drink",
+  "description": "Warm and rounded. Centred hero, a counter carousel and a story about the ovens.",
+  "shopType": null,
+  "sortOrder": 40,
+  "config": {
+    "schemaVersion": 1,
+    "tokens": {
+      "primary": "#8a4b2a",
+      "background": "#fffaf3",
+      "foreground": "#2a1a10",
+      "muted": "#f7ecdf",
+      "accent": "#e7cba9",
+      "border": "#ecdcc9",
+      "ring": "#8a4b2a",
+      "fontHeading": "Georgia, 'Times New Roman', serif",
+      "fontBody": "Verdana, Geneva, sans-serif",
+      "radius": "1.5rem",
+      "mode": "light"
+    },
+    "sections": [
+      {
+        "id": "announcement",
+        "type": "announcement-bar",
+        "props": {
+          "text": "Baked at 5am · Same-day delivery inside the ring road",
+          "dismissible": false
+        }
+      },
+      {
+        "id": "header",
+        "type": "site-header",
+        "props": {
+          "showShopName": true,
+          "showLogo": true,
+          "showSearch": true,
+          "sticky": true,
+          "links": []
+        }
+      },
+      {
+        "id": "hero",
+        "type": "hero",
+        "variant": "centered",
+        "props": {
+          "heading": "Coffee, bread and something sweet",
+          "subheading": "A neighbourhood bakery and café. Order a loaf, a box of pastries or beans for the week.",
+          "imageUrl": "asset:HERO/main",
+          "cta": {
+            "label": "See today's counter",
+            "href": "#products"
+          }
+        }
+      },
+      {
+        "id": "story",
+        "type": "image-with-text",
+        "props": {
+          "heading": "Baked before sunrise",
+          "body": "The first dough is mixed at four. By the time we open, the sourdough has had its rise and the croissants are cool enough to pack. Whatever is left at six goes to the shelter on the corner.",
+          "imageUrl": "",
+          "imagePosition": "left"
+        }
+      },
+      {
+        "id": "products",
+        "type": "product-carousel",
+        "props": {
+          "heading": "Today's counter",
+          "source": "latest",
+          "limit": 8
+        }
+      },
+      {
+        "id": "order",
+        "type": "feature-list",
+        "props": {
+          "heading": "How to order",
+          "items": [
+            "Order before 2pm for same-day delivery",
+            "Choose a delivery window at checkout",
+            "Pay the rider in cash, or transfer in advance"
+          ]
+        }
+      },
+      {
+        "id": "cta",
+        "type": "cta-banner",
+        "props": {
+          "heading": "Ordering for an office?",
+          "body": "We do breakfast boxes and coffee urns with a day's notice.",
+          "cta": {
+            "label": "Browse the menu",
+            "href": "#products"
+          }
+        }
+      },
+      {
+        "id": "footer",
+        "type": "site-footer",
+        "props": {
+          "columns": [],
+          "showPaymentBadges": true
+        }
+      }
+    ],
+    "nav": {
+      "menu": [
+        {
+          "label": "Menu",
+          "href": "#products"
+        },
+        {
+          "label": "Our bakery",
+          "href": "#story"
+        }
+      ]
+    },
+    "footer": {
+      "assetHandle": "footer-main",
+      "columns": 3,
+      "showPaymentBadges": true
+    }
+  }
+}

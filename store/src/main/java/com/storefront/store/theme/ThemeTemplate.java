@@ -66,6 +66,16 @@ public class ThemeTemplate extends BaseEntity {
 	@Column(name = "description")
 	private String description;
 
+	/**
+	 * The shelf label in the Themes gallery ("Grocery", "Fashion").
+	 *
+	 * <p>Not a filter. {@link #shopType} decides who may see a template; this only tells a person
+	 * what the template is for. Keeping them apart is what lets a bakery install the fashion
+	 * layout if it likes the look.
+	 */
+	@Column(name = "category")
+	private String category;
+
 	@Column(name = "preview_media_id")
 	private UUID previewMediaId;
 

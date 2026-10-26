@@ -1,0 +1,133 @@
+{
+  "code": "hardware-tools",
+  "name": "Hardware & Tools",
+  "category": "Hardware",
+  "description": "Utilitarian and dense. Trade categories, a three-point promise and a parts FAQ.",
+  "shopType": null,
+  "sortOrder": 130,
+  "config": {
+    "schemaVersion": 1,
+    "tokens": {
+      "primary": "#33475b",
+      "background": "#f7f9fa",
+      "foreground": "#17212b",
+      "muted": "#edf1f4",
+      "accent": "#cfdae3",
+      "border": "#dde4ea",
+      "ring": "#33475b",
+      "fontHeading": "'Arial Narrow', 'Roboto Condensed', Arial, sans-serif",
+      "fontBody": "Arial, Helvetica, sans-serif",
+      "radius": "0.375rem",
+      "mode": "light"
+    },
+    "sections": [
+      {
+        "id": "announcement",
+        "type": "announcement-bar",
+        "props": {
+          "text": "Trade prices · Bulk orders delivered free inside the Valley",
+          "dismissible": false
+        }
+      },
+      {
+        "id": "header",
+        "type": "site-header",
+        "props": {
+          "showShopName": true,
+          "showLogo": true,
+          "showSearch": true,
+          "sticky": true,
+          "links": []
+        }
+      },
+      {
+        "id": "hero",
+        "type": "hero",
+        "variant": "split-image",
+        "props": {
+          "heading": "Tools that finish the job",
+          "subheading": "Hand tools, fasteners and power tools for the trade and for the Saturday list.",
+          "imageUrl": "asset:HERO/main",
+          "cta": {
+            "label": "Shop the racks",
+            "href": "#products"
+          }
+        }
+      },
+      {
+        "id": "categories",
+        "type": "category-grid",
+        "props": {
+          "columns": 4,
+          "source": "shop_categories",
+          "limit": 8,
+          "heading": "Shop by trade"
+        }
+      },
+      {
+        "id": "reasons",
+        "type": "feature-list",
+        "props": {
+          "heading": "For trade and home",
+          "items": [
+            "Bulk pricing on nails, screws and fixings",
+            "Power tools serviced in-house",
+            "Delivery to site, not just to the door"
+          ]
+        }
+      },
+      {
+        "id": "products",
+        "type": "product-grid",
+        "props": {
+          "heading": "Workshop essentials",
+          "source": "latest",
+          "limit": 8,
+          "columns": 4
+        }
+      },
+      {
+        "id": "faq",
+        "type": "faq",
+        "props": {
+          "heading": "Orders and delivery",
+          "items": [
+            {
+              "q": "Do you deliver to a site?",
+              "a": "Yes. Give the site address and a contact number at checkout."
+            },
+            {
+              "q": "Can I return a tool I have used?",
+              "a": "Faulty tools are replaced under warranty. Used consumables cannot be returned."
+            }
+          ]
+        }
+      },
+      {
+        "id": "footer",
+        "type": "site-footer",
+        "props": {
+          "columns": [],
+          "showPaymentBadges": true
+        }
+      }
+    ],
+    "nav": {
+      "menu": [
+        {
+          "label": "Shop",
+          "href": "#products"
+        },
+        {
+          "label": "Trades",
+          "href": "#categories"
+        }
+      ]
+    },
+    "footer": {
+      "assetHandle": "footer-main",
+      "columns": 3,
+      "showPaymentBadges": true
+    }
+  }
+}

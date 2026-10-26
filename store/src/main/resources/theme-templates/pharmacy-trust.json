@@ -1,0 +1,155 @@
+{
+  "code": "pharmacy-trust",
+  "name": "Pharmacy Trust",
+  "category": "Pharmacy",
+  "description": "Calm, clinical layout that leads with prescription guidance and pharmacist trust.",
+  "shopType": "PHARMACY",
+  "sortOrder": 0,
+  "config": {
+    "schemaVersion": 1,
+    "tokens": {
+      "primary": "#0d9488",
+      "background": "#ffffff",
+      "foreground": "#0f172a",
+      "muted": "#f0fdfa",
+      "accent": "#0ea5e9",
+      "border": "#ccfbf1",
+      "ring": "#0d9488",
+      "fontHeading": "Inter",
+      "fontBody": "Inter",
+      "radius": "0.5rem",
+      "mode": "light"
+    },
+    "sections": [
+      {
+        "id": "announcement",
+        "type": "announcement-bar",
+        "props": {
+          "text": "Licensed pharmacy · Prescriptions accepted · Free delivery over Rs. 500",
+          "dismissible": false
+        }
+      },
+      {
+        "id": "header",
+        "type": "site-header",
+        "props": {
+          "showShopName": true,
+          "showLogo": true,
+          "showSearch": true,
+          "sticky": true,
+          "links": []
+        }
+      },
+      {
+        "id": "hero-1",
+        "type": "hero",
+        "variant": "split-image",
+        "props": {
+          "heading": "Your neighbourhood pharmacy",
+          "subheading": "Genuine medicines, dispensed by licensed pharmacists. Send your prescription and a pharmacist will confirm before delivery.",
+          "imageUrl": "asset:HERO/main",
+          "cta": {
+            "label": "Browse medicines",
+            "href": "#products"
+          }
+        }
+      },
+      {
+        "id": "categories",
+        "type": "category-grid",
+        "props": {
+          "columns": 4,
+          "source": "shop_categories",
+          "limit": 8
+        }
+      },
+      {
+        "id": "featured",
+        "type": "product-carousel",
+        "props": {
+          "heading": "In stock now",
+          "source": "featured",
+          "limit": 8
+        }
+      },
+      {
+        "id": "how-it-works",
+        "type": "feature-list",
+        "props": {
+          "heading": "How ordering works",
+          "items": [
+            "Send your prescription photo at checkout",
+            "A pharmacist reviews and confirms your order",
+            "We deliver; you pay the courier on arrival"
+          ]
+        }
+      },
+      {
+        "id": "all-products",
+        "type": "product-grid",
+        "props": {
+          "source": "latest",
+          "limit": 12,
+          "columns": 4
+        }
+      },
+      {
+        "id": "faq",
+        "type": "faq",
+        "props": {
+          "heading": "Common questions",
+          "items": [
+            {
+              "q": "Do I need a prescription?",
+              "a": "Yes for prescription-only medicines. Schedule I and II items require one; over-the-counter items do not."
+            },
+            {
+              "q": "Do you deliver outside Kathmandu?",
+              "a": "Yes. Delivery charge and time depend on your area."
+            },
+            {
+              "q": "Can I return a medicine?",
+              "a": "Sealed items only, and only where the law permits. Opened medicines cannot be returned."
+            }
+          ]
+        }
+      },
+      {
+        "id": "trust",
+        "type": "trust-badges",
+        "props": {
+          "items": [
+            "Licensed pharmacy",
+            "Pharmacist reviewed",
+            "Cash on delivery"
+          ]
+        }
+      },
+      {
+        "id": "footer",
+        "type": "site-footer",
+        "props": {
+          "columns": [],
+          "showPaymentBadges": true
+        }
+      }
+    ],
+    "nav": {
+      "menu": [
+        {
+          "label": "Medicines",
+          "href": "#products"
+        },
+        {
+          "label": "Questions",
+          "href": "#faq"
+        }
+      ]
+    },
+    "footer": {
+      "assetHandle": "footer-main",
+      "columns": 3,
+      "showPaymentBadges": true
+    }
+  }
+}

@@ -1,0 +1,133 @@
+{
+  "code": "bookshop-classic",
+  "name": "The Bookshop",
+  "category": "Books",
+  "description": "Traditional and warm. A serif shelf, four-column categories and an ordering FAQ.",
+  "shopType": null,
+  "sortOrder": 80,
+  "config": {
+    "schemaVersion": 1,
+    "tokens": {
+      "primary": "#1f4037",
+      "background": "#faf7ef",
+      "foreground": "#1c241f",
+      "muted": "#f1ece0",
+      "accent": "#d9d2bd",
+      "border": "#e1dac9",
+      "ring": "#1f4037",
+      "fontHeading": "'Iowan Old Style', 'Palatino Linotype', Georgia, serif",
+      "fontBody": "Georgia, serif",
+      "radius": "0.25rem",
+      "mode": "light"
+    },
+    "sections": [
+      {
+        "id": "announcement",
+        "type": "announcement-bar",
+        "props": {
+          "text": "Free bookmark with every order · Kathmandu delivery in two days",
+          "dismissible": false
+        }
+      },
+      {
+        "id": "header",
+        "type": "site-header",
+        "props": {
+          "showShopName": true,
+          "showLogo": true,
+          "showSearch": true,
+          "sticky": true,
+          "links": []
+        }
+      },
+      {
+        "id": "hero",
+        "type": "hero",
+        "variant": "split-image",
+        "props": {
+          "heading": "A shelf for every reader",
+          "subheading": "Fiction, history and children's books, chosen by people who read them. Ask us for a recommendation and we will actually answer.",
+          "imageUrl": "asset:HERO/main",
+          "cta": {
+            "label": "Browse the shelves",
+            "href": "#products"
+          }
+        }
+      },
+      {
+        "id": "categories",
+        "type": "category-grid",
+        "props": {
+          "columns": 4,
+          "source": "shop_categories",
+          "limit": 8,
+          "heading": "Browse the shelves"
+        }
+      },
+      {
+        "id": "products",
+        "type": "product-grid",
+        "props": {
+          "heading": "Staff picks",
+          "source": "latest",
+          "limit": 8,
+          "columns": 4
+        }
+      },
+      {
+        "id": "faq",
+        "type": "faq",
+        "props": {
+          "heading": "Orders and delivery",
+          "items": [
+            {
+              "q": "Can I order a book you do not stock?",
+              "a": "Yes. Most titles arrive in seven to ten days; we will message you before ordering."
+            },
+            {
+              "q": "Do you gift-wrap?",
+              "a": "Free, with a handwritten card. Mention it at checkout."
+            },
+            {
+              "q": "Can I return a book?",
+              "a": "Unread copies within seven days. We cannot take back a spine that has been cracked."
+            }
+          ]
+        }
+      },
+      {
+        "id": "newsletter",
+        "type": "newsletter",
+        "props": {
+          "heading": "New arrivals, once a month",
+          "subheading": "What came in, and what we are reading."
+        }
+      },
+      {
+        "id": "footer",
+        "type": "site-footer",
+        "props": {
+          "columns": [],
+          "showPaymentBadges": true
+        }
+      }
+    ],
+    "nav": {
+      "menu": [
+        {
+          "label": "Books",
+          "href": "#products"
+        },
+        {
+          "label": "Shelves",
+          "href": "#categories"
+        }
+      ]
+    },
+    "footer": {
+      "assetHandle": "footer-main",
+      "columns": 3,
+      "showPaymentBadges": true
+    }
+  }
+}

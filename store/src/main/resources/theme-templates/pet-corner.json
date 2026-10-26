@@ -1,0 +1,128 @@
+{
+  "code": "pet-corner",
+  "name": "Pet Corner",
+  "category": "Pets",
+  "description": "Friendly and round. A centred welcome, pet categories and a questions block.",
+  "shopType": null,
+  "sortOrder": 110,
+  "config": {
+    "schemaVersion": 1,
+    "tokens": {
+      "primary": "#c2681f",
+      "background": "#fff9f2",
+      "foreground": "#2a1c10",
+      "muted": "#fbeee0",
+      "accent": "#f4d9b8",
+      "border": "#eeddc8",
+      "ring": "#c2681f",
+      "fontHeading": "'Trebuchet MS', 'Segoe UI', sans-serif",
+      "fontBody": "Verdana, Geneva, sans-serif",
+      "radius": "1.5rem",
+      "mode": "light"
+    },
+    "sections": [
+      {
+        "id": "announcement",
+        "type": "announcement-bar",
+        "props": {
+          "text": "Vet-approved food · Free delivery over Rs. 1,500",
+          "dismissible": false
+        }
+      },
+      {
+        "id": "header",
+        "type": "site-header",
+        "props": {
+          "showShopName": true,
+          "showLogo": true,
+          "showSearch": true,
+          "sticky": true,
+          "links": []
+        }
+      },
+      {
+        "id": "hero",
+        "type": "hero",
+        "variant": "centered",
+        "props": {
+          "heading": "Everything for the ones with paws",
+          "subheading": "Food, litter, toys and the small things you run out of on a Sunday evening.",
+          "imageUrl": "asset:HERO/main",
+          "cta": {
+            "label": "Shop for your pet",
+            "href": "#products"
+          }
+        }
+      },
+      {
+        "id": "categories",
+        "type": "category-grid",
+        "props": {
+          "columns": 4,
+          "source": "shop_categories",
+          "limit": 8,
+          "heading": "Shop by pet"
+        }
+      },
+      {
+        "id": "products",
+        "type": "product-carousel",
+        "props": {
+          "heading": "Popular this week",
+          "source": "latest",
+          "limit": 8
+        }
+      },
+      {
+        "id": "faq",
+        "type": "faq",
+        "props": {
+          "heading": "Questions from pet parents",
+          "items": [
+            {
+              "q": "Can I order a month of food at once?",
+              "a": "Yes. Bulk bags are delivered free inside the Valley."
+            },
+            {
+              "q": "Do you stock prescription diets?",
+              "a": "Some. Send a photograph of the prescription and we will confirm."
+            }
+          ]
+        }
+      },
+      {
+        "id": "newsletter",
+        "type": "newsletter",
+        "props": {
+          "heading": "Join the pack",
+          "subheading": "New stock, and the occasional photo of a customer."
+        }
+      },
+      {
+        "id": "footer",
+        "type": "site-footer",
+        "props": {
+          "columns": [],
+          "showPaymentBadges": true
+        }
+      }
+    ],
+    "nav": {
+      "menu": [
+        {
+          "label": "Shop",
+          "href": "#products"
+        },
+        {
+          "label": "Pets",
+          "href": "#categories"
+        }
+      ]
+    },
+    "footer": {
+      "assetHandle": "footer-main",
+      "columns": 3,
+      "showPaymentBadges": true
+    }
+  }
+}

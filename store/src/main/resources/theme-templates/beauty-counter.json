@@ -1,0 +1,123 @@
+{
+  "code": "beauty-counter",
+  "name": "Beauty Counter",
+  "category": "Beauty",
+  "description": "Soft and unhurried. Three-column categories, a curated shelf and a promise strip.",
+  "shopType": null,
+  "sortOrder": 50,
+  "config": {
+    "schemaVersion": 1,
+    "tokens": {
+      "primary": "#9d4b63",
+      "background": "#fdf7f8",
+      "foreground": "#2b1620",
+      "muted": "#f7e9ee",
+      "accent": "#f0cdd8",
+      "border": "#ecd6dd",
+      "ring": "#9d4b63",
+      "fontHeading": "Baskerville, 'Palatino Linotype', Georgia, serif",
+      "fontBody": "Arial, Helvetica, sans-serif",
+      "radius": "1.25rem",
+      "mode": "light"
+    },
+    "sections": [
+      {
+        "id": "announcement",
+        "type": "announcement-bar",
+        "props": {
+          "text": "Authentic products · Free samples with every order",
+          "dismissible": false
+        }
+      },
+      {
+        "id": "header",
+        "type": "site-header",
+        "props": {
+          "showShopName": true,
+          "showLogo": true,
+          "showSearch": true,
+          "sticky": true,
+          "links": []
+        }
+      },
+      {
+        "id": "hero",
+        "type": "hero",
+        "variant": "split-image",
+        "props": {
+          "heading": "Skincare that earns its place",
+          "subheading": "A short shelf of products we have used ourselves — cleansers, serums and sunscreens for Nepal's dust and sun.",
+          "imageUrl": "asset:HERO/main",
+          "cta": {
+            "label": "Shop the shelf",
+            "href": "#products"
+          }
+        }
+      },
+      {
+        "id": "categories",
+        "type": "category-grid",
+        "props": {
+          "columns": 3,
+          "source": "shop_categories",
+          "limit": 6,
+          "heading": "Shop by category"
+        }
+      },
+      {
+        "id": "products",
+        "type": "product-carousel",
+        "props": {
+          "heading": "Loved right now",
+          "source": "latest",
+          "limit": 8
+        }
+      },
+      {
+        "id": "promise",
+        "type": "feature-list",
+        "props": {
+          "heading": "What we promise",
+          "items": [
+            "Authentic stock, sourced directly",
+            "Samples so you can try before you buy",
+            "No lectures about your skin"
+          ]
+        }
+      },
+      {
+        "id": "newsletter",
+        "type": "newsletter",
+        "props": {
+          "heading": "The routine guide",
+          "subheading": "A short monthly note on what to use, and in what order."
+        }
+      },
+      {
+        "id": "footer",
+        "type": "site-footer",
+        "props": {
+          "columns": [],
+          "showPaymentBadges": true
+        }
+      }
+    ],
+    "nav": {
+      "menu": [
+        {
+          "label": "Shop",
+          "href": "#products"
+        },
+        {
+          "label": "Categories",
+          "href": "#categories"
+        }
+      ]
+    },
+    "footer": {
+      "assetHandle": "footer-main",
+      "columns": 3,
+      "showPaymentBadges": true
+    }
+  }
+}

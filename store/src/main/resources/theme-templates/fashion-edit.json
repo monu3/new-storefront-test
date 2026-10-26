@@ -1,0 +1,122 @@
+{
+  "code": "fashion-edit",
+  "name": "Fashion Edit",
+  "category": "Fashion",
+  "description": "Editorial and unhurried. Oversized type, a two-column lookbook and a story block.",
+  "shopType": null,
+  "sortOrder": 20,
+  "config": {
+    "schemaVersion": 1,
+    "tokens": {
+      "primary": "#1c1917",
+      "background": "#faf7f2",
+      "foreground": "#1c1917",
+      "muted": "#f0e9df",
+      "accent": "#d9c7b0",
+      "border": "#e2d8cb",
+      "ring": "#1c1917",
+      "fontHeading": "Didot, 'Bodoni MT', Georgia, serif",
+      "fontBody": "Arial, Helvetica, sans-serif",
+      "radius": "0rem",
+      "mode": "light"
+    },
+    "sections": [
+      {
+        "id": "announcement",
+        "type": "announcement-bar",
+        "props": {
+          "text": "New season · Free returns within 7 days",
+          "dismissible": false
+        }
+      },
+      {
+        "id": "header",
+        "type": "site-header",
+        "props": {
+          "showShopName": true,
+          "showLogo": true,
+          "showSearch": true,
+          "sticky": true,
+          "links": []
+        }
+      },
+      {
+        "id": "hero",
+        "type": "hero",
+        "variant": "split-image",
+        "props": {
+          "heading": "Quiet pieces, made for every day",
+          "subheading": "Small-batch clothing in natural fabrics. Cut in Kathmandu, delivered across Nepal.",
+          "imageUrl": "asset:HERO/main",
+          "cta": {
+            "label": "Shop the collection",
+            "href": "#products"
+          }
+        }
+      },
+      {
+        "id": "categories",
+        "type": "category-grid",
+        "props": {
+          "columns": 3,
+          "source": "shop_categories",
+          "limit": 6,
+          "heading": "Shop by category"
+        }
+      },
+      {
+        "id": "products",
+        "type": "product-grid",
+        "props": {
+          "heading": "New arrivals",
+          "source": "latest",
+          "limit": 6,
+          "columns": 2
+        }
+      },
+      {
+        "id": "story",
+        "type": "image-with-text",
+        "props": {
+          "heading": "Made to be worn for years",
+          "body": "We work with two workshops in the Valley and order in small runs. That keeps the fabrics good and the fit honest, and means you will not meet five people wearing your jacket.",
+          "imageUrl": "",
+          "imagePosition": "right"
+        }
+      },
+      {
+        "id": "newsletter",
+        "type": "newsletter",
+        "props": {
+          "heading": "First look at new pieces",
+          "subheading": "One email a month. New arrivals, restocks, nothing else."
+        }
+      },
+      {
+        "id": "footer",
+        "type": "site-footer",
+        "props": {
+          "columns": [],
+          "showPaymentBadges": true
+        }
+      }
+    ],
+    "nav": {
+      "menu": [
+        {
+          "label": "New in",
+          "href": "#products"
+        },
+        {
+          "label": "Our story",
+          "href": "#story"
+        }
+      ]
+    },
+    "footer": {
+      "assetHandle": "footer-main",
+      "columns": 3,
+      "showPaymentBadges": true
+    }
+  }
+}

@@ -1,0 +1,144 @@
+{
+  "code": "electronics-hub",
+  "name": "Electronics Hub",
+  "category": "Electronics",
+  "description": "Dense and practical. Wide category strip, spec-friendly grid and a buying FAQ.",
+  "shopType": null,
+  "sortOrder": 30,
+  "config": {
+    "schemaVersion": 1,
+    "tokens": {
+      "primary": "#1d4ed8",
+      "background": "#f8fafc",
+      "foreground": "#0f172a",
+      "muted": "#eef2f7",
+      "accent": "#c7d7fe",
+      "border": "#dbe2ea",
+      "ring": "#1d4ed8",
+      "fontHeading": "'Trebuchet MS', 'Segoe UI', sans-serif",
+      "fontBody": "Arial, Helvetica, sans-serif",
+      "radius": "0.5rem",
+      "mode": "light"
+    },
+    "sections": [
+      {
+        "id": "announcement",
+        "type": "announcement-bar",
+        "props": {
+          "text": "Genuine products · 1-year warranty · Free delivery over Rs. 5,000",
+          "dismissible": false
+        }
+      },
+      {
+        "id": "header",
+        "type": "site-header",
+        "props": {
+          "showShopName": true,
+          "showLogo": true,
+          "showSearch": true,
+          "sticky": true,
+          "links": []
+        }
+      },
+      {
+        "id": "hero",
+        "type": "hero",
+        "variant": "split-image",
+        "props": {
+          "heading": "Tech that keeps up with you",
+          "subheading": "Phones, laptops and accessories with a local warranty and a counter you can walk into.",
+          "imageUrl": "asset:HERO/main",
+          "cta": {
+            "label": "Browse the shop",
+            "href": "#products"
+          }
+        }
+      },
+      {
+        "id": "categories",
+        "type": "category-grid",
+        "props": {
+          "columns": 4,
+          "source": "shop_categories",
+          "limit": 8,
+          "heading": "Browse by category"
+        }
+      },
+      {
+        "id": "products",
+        "type": "product-grid",
+        "props": {
+          "heading": "Best sellers",
+          "source": "latest",
+          "limit": 8,
+          "columns": 4
+        }
+      },
+      {
+        "id": "confidence",
+        "type": "feature-list",
+        "props": {
+          "heading": "Buying with confidence",
+          "items": [
+            "Warranty honoured at our own counter",
+            "Checked and tested before dispatch",
+            "Seven-day replacement on dead on arrival"
+          ]
+        }
+      },
+      {
+        "id": "faq",
+        "type": "faq",
+        "props": {
+          "heading": "Before you buy",
+          "items": [
+            {
+              "q": "Is the warranty local?",
+              "a": "Yes. Claims are handled at our shop, not shipped abroad."
+            },
+            {
+              "q": "Do you take exchanges?",
+              "a": "Unopened items within seven days, with the bill."
+            }
+          ]
+        }
+      },
+      {
+        "id": "trust",
+        "type": "trust-badges",
+        "props": {
+          "items": [
+            "Local warranty",
+            "Tested before dispatch",
+            "Cash on delivery"
+          ]
+        }
+      },
+      {
+        "id": "footer",
+        "type": "site-footer",
+        "props": {
+          "columns": [],
+          "showPaymentBadges": true
+        }
+      }
+    ],
+    "nav": {
+      "menu": [
+        {
+          "label": "Shop",
+          "href": "#products"
+        },
+        {
+          "label": "Categories",
+          "href": "#categories"
+        }
+      ]
+    },
+    "footer": {
+      "assetHandle": "footer-main",
+      "columns": 3,
+      "showPaymentBadges": true
+    }
+  }
+}

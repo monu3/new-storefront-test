@@ -55,6 +55,13 @@ export interface MarketplaceEntry {
   code: string;
   name: string;
   description?: string | null;
+  /**
+   * Shelf label in the gallery ("Grocery", "Fashion"). Display only.
+   *
+   * <p>Deliberately not a filter: {@link shopType} decides who may install a template, while this
+   * only says what the template is for. A bakery may want the fashion layout.
+   */
+  category?: string | null;
   shopType: ShopTypeCode | null;
   priceTier: ThemePriceTier;
   previewImageUrl: string | null;

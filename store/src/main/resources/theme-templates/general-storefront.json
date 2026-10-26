@@ -1,0 +1,128 @@
+{
+  "code": "general-storefront",
+  "name": "General Storefront",
+  "category": "General",
+  "description": "A neutral layout that suits any vertical. Hero, categories, products and trust badges.",
+  "shopType": null,
+  "sortOrder": 100,
+  "config": {
+    "schemaVersion": 1,
+    "tokens": {
+      "primary": "#7a5240",
+      "background": "#fbf7f2",
+      "foreground": "#241a12",
+      "muted": "#f3ebe1",
+      "accent": "#c8a27a",
+      "border": "#e7dccf",
+      "ring": "#7a5240",
+      "fontHeading": "Inter",
+      "fontBody": "Inter",
+      "radius": "1rem",
+      "mode": "light"
+    },
+    "sections": [
+      {
+        "id": "announcement",
+        "type": "announcement-bar",
+        "props": {
+          "text": "Free local delivery over Rs. 2,000",
+          "dismissible": true
+        }
+      },
+      {
+        "id": "header",
+        "type": "site-header",
+        "props": {
+          "showShopName": true,
+          "showLogo": true,
+          "showSearch": true,
+          "sticky": true,
+          "links": []
+        }
+      },
+      {
+        "id": "hero-1",
+        "type": "hero",
+        "variant": "split-image",
+        "props": {
+          "heading": "Your shop, online",
+          "subheading": "Browse what we stock and order for delivery across Nepal.",
+          "imageUrl": "asset:HERO/main",
+          "cta": {
+            "label": "Shop now",
+            "href": "#products"
+          }
+        }
+      },
+      {
+        "id": "categories",
+        "type": "category-grid",
+        "props": {
+          "columns": 4,
+          "source": "shop_categories",
+          "limit": 8
+        }
+      },
+      {
+        "id": "featured",
+        "type": "product-carousel",
+        "props": {
+          "heading": "Popular right now",
+          "source": "featured",
+          "limit": 8
+        }
+      },
+      {
+        "id": "story",
+        "type": "image-with-text",
+        "props": {
+          "heading": "Why shop with us",
+          "body": "We are a shop on your street, not a warehouse on the other side of the world. Orders placed before four are packed the same day, and there is a person here who answers the phone.",
+          "imageUrl": "",
+          "imagePosition": "left"
+        }
+      },
+      {
+        "id": "all-products",
+        "type": "product-grid",
+        "props": {
+          "source": "latest",
+          "limit": 8,
+          "columns": 4
+        }
+      },
+      {
+        "id": "trust",
+        "type": "trust-badges",
+        "props": {
+          "items": [
+            "Cash on delivery",
+            "Bank transfer",
+            "Secure checkout"
+          ]
+        }
+      },
+      {
+        "id": "footer",
+        "type": "site-footer",
+        "props": {
+          "columns": [],
+          "showPaymentBadges": true
+        }
+      }
+    ],
+    "nav": {
+      "menu": [
+        {
+          "label": "Shop",
+          "href": "#products"
+        }
+      ]
+    },
+    "footer": {
+      "assetHandle": "footer-main",
+      "columns": 3,
+      "showPaymentBadges": true
+    }
+  }
+}

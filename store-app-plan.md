@@ -6210,3 +6210,124 @@ console-wide; `check-appearance.mjs` reports the number without gating on it.
 - A "Remove draft" action: mounts of unused drafts accumulate, and the gallery shows all of them.
 - The customiser's scaled preview is legible for layout and colour but not for body text; `Preview`
   opens the real storefront for that.
+
+---
+
+## Appendix AN — A catalogue of ready-made themes (Appearance, part 2)
+
+Appendix AM rebuilt Appearance in Dukaan's shape but left it with **two** templates, one of them
+tagged PHARMACY. That is a customiser with a demo attached, not a theme shop. This appendix adds the
+shelf: fourteen ready-made designs, each installable in one click and editable in the customiser that
+already existed.
+
+### What a "template" is here, stated honestly
+
+The engine has one renderer and a closed set of section types. Two templates cannot differ by markup
+because there is no second markup. They differ by:
+
+- **palette** — six colours and a derived readable foreground;
+- **type** — a real font stack (`Didot, Georgia, serif`, `Arial Black`, …), not a webfont;
+- **radius** — from 0 (Fashion, Jewellery) to 1.75rem (Flowers);
+- **composition** — which sections, in what order, at what density, and the hero's `split-image`
+  vs `centered` variant;
+- **copy** — written for a trade, not "Your shop, online".
+
+That is also what Dukaan's themes are: the same component system, arranged differently. Saying so
+matters because a shop owner who installs "Café & Bakery" and then edits every word has not been
+sold a lie — they have been given a starting layout.
+
+### The shelf
+
+| Shelf | Template | Opening move |
+|---|---|---|
+| Pharmacy | Pharmacy Trust | clinical split hero, prescription FAQ (the original; still PHARMACY-only) |
+| Grocery | Grocery Fresh | centred hero, aisle shortcuts, freshness promise |
+| Fashion | Fashion Edit | editorial serif, two-column lookbook, story on the right |
+| Electronics | Electronics Hub | dense categories, budget grid, buying FAQ |
+| Food & drink | Café & Bakery | warm rounded cards, bakery story, counter carousel |
+| Beauty | Beauty Counter | soft rose, curated shelf, "what we promise" strip |
+| Home & living | Home & Living | calm centred opening, maker story, rooms |
+| Jewellery | Jewellery Atelier | sharp corners, gold, sparse collection, note on the metals |
+| Books | The Bookshop | parchment and serif, shelves, ordering FAQ |
+| Sports | Sports Active | heavy headings, gear grid, blunt FAQ |
+| General | General Storefront | the neutral original, categorised |
+| Pets | Pet Corner | friendly orange, pet categories, pet-parent questions |
+| Flowers | Flower Studio | tall rounded hero, bouquets, same-day note |
+| Hardware | Hardware & Tools | condensed type, trade categories, site-delivery FAQ |
+
+Thirteen are untagged, so every shop sees them; only the pharmacy layout is restricted to a
+pharmacy. **Thirteen categories is the offer, not thirteen product types:** a grocery owner can
+install "Fashion Edit" if they like the look, which is why the shelf label and the visibility rule
+are separate fields.
+
+### Decisions
+
+1. **`category` is a new column, not a reuse of `shop_type`.** `shop_type` is a filter (D17): a
+   template tagged PHARMACY is invisible to a bakery. Reusing it for the shelf would have forced a
+   choice between "everyone sees everything" and "you only see your own trade". `category` is for
+   people; `shop_type` stays a rule. Migration `V19__theme_template_category.sql` adds it nullable
+   and backfills the two existing rows.
+2. **Templates are JSON files, not Java text blocks.** `src/main/resources/theme-templates/*.json`
+   holds metadata next to the document. At two templates a text block was fine; at fourteen it is a
+   file nobody wants to edit, where a misplaced comma hides inside a class instead of a diff. A new
+   template is now a new file.
+3. **The seeder still never overwrites.** A code that already exists is left alone, so an admin's
+   edit or an unpublish survives a restart. The consequence is stated in the class: a change to a
+   shipped file only reaches shops that install it afterwards — everyone else holds their own copy.
+4. **One bad file does not cost the catalogue.** Files are parsed and seeded independently. The
+   validator rejecting a document is logged with the filename and skipped; startup continues. In
+   tests the seeder is off, so `ThemeTemplateCatalogueTest` validates every shipped file directly —
+   otherwise a typo would only ever appear as a boot-time log line in production.
+5. **The gallery groups, it does not paginate.** A category chip row ("All · Grocery · Fashion …")
+   filters client-side: the whole catalogue already arrives in one request, and filtering here keeps
+   each chip's count honest without a round trip per click. Cards gained a category overline above
+   the name; the live theme's inverted strip is unchanged.
+6. **Previews stay real renders.** Every card still renders the shop's own products through
+   `ThemeRenderer`, scaled. No template has a `preview_media_id`, so a screenshot-based gallery
+   would have been fourteen placeholders.
+
+### What is deliberately not done
+
+- **No "Preview" button per template.** The card is the preview; the customiser opens on install.
+  A full-page preview before installing is a reasonable next step, not a missing control that lies.
+- **No template editing from the console.** The catalogue is shipped data an admin changes in a
+  file; the admin template endpoints gain `category` read-only, and no admin screen exists (there
+  was none before).
+- **No fake testimonials, countdowns or video.** The section types exist, but shipping invented
+  customer quotes in a template a real shop then publishes would be manufacturing trust. Those
+  sections are absent from all fourteen.
+
+### Data changed in the development database (disclosed)
+
+| Change | Rows |
+|---|---|
+| `theme_template` inserted and published | 12: `grocery-fresh`, `fashion-edit`, `electronics-hub`, `cafe-bakery`, `beauty-counter`, `home-living`, `jewellery-atelier`, `bookshop-classic`, `sports-active`, `pet-corner`, `flower-studio`, `hardware-tools` |
+| `theme_template.category` backfilled | `pharmacy-trust` → Pharmacy, `general-storefront` → General |
+| `shop_theme` created then deleted | one "Grocery Fresh" draft from the install test, removed with `delete from shop_theme` |
+
+The two pre-existing rows were **not** rewritten: their shipped files were generated from the
+current rows and verified byte-for-byte (semantically) against the database before the seeder change.
+
+### Verification
+
+```
+typecheck        10/10 packages
+backend          6087 tests, 0 failures, 0 errors, 0 skipped   (full clean run; +2 catalogue tests)
+theme tests      54 tests, 0 failures
+check-ui         ALL PAGES OK
+check-contrast   CONTRAST OK
+check-appearance APPEARANCE OK (13 templates offered, 4 installed themes, previews show the shop)
+install flow     "Grocery Fresh" installed → customiser, grocery copy and 9 sections in the rail,
+                 fresh install not dirty, Publish disabled, no failed API calls; draft deleted after
+gallery          chips: All + 13 shelves; Fashion filter leaves exactly 1 card;
+                 0 cards without a preview; no console errors
+```
+
+### Still to do from here
+
+- **"Remove draft"** is now more visible than before: "Your themes" shows every mount, including
+  two stale General Storefront drafts and a "Default" from earlier tests. The delete endpoint
+  exists; there is no button.
+- The hero's image placeholder dominates a template preview until a shop uploads its own photograph
+  (palette-aware, so it reads as a block rather than a broken image — but it is still empty).
+- Pages / Menus / Blog remain absent, as recorded in Appendix AM.

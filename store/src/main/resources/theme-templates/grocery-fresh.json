@@ -1,0 +1,136 @@
+{
+  "code": "grocery-fresh",
+  "name": "Grocery Fresh",
+  "category": "Grocery",
+  "description": "Bright, produce-first layout. Aisle shortcuts, today's picks and a full shelf.",
+  "shopType": null,
+  "sortOrder": 10,
+  "config": {
+    "schemaVersion": 1,
+    "tokens": {
+      "primary": "#2f6b3a",
+      "background": "#fbfdf8",
+      "foreground": "#16240f",
+      "muted": "#eef5e6",
+      "accent": "#d7e8c6",
+      "border": "#dbe7d0",
+      "ring": "#2f6b3a",
+      "fontHeading": "Arial, Helvetica, sans-serif",
+      "fontBody": "Arial, Helvetica, sans-serif",
+      "radius": "0.75rem",
+      "mode": "light"
+    },
+    "sections": [
+      {
+        "id": "announcement",
+        "type": "announcement-bar",
+        "props": {
+          "text": "Fresh from the market · Free delivery over Rs. 1,000",
+          "dismissible": false
+        }
+      },
+      {
+        "id": "header",
+        "type": "site-header",
+        "props": {
+          "showShopName": true,
+          "showLogo": true,
+          "showSearch": true,
+          "sticky": true,
+          "links": []
+        }
+      },
+      {
+        "id": "hero",
+        "type": "hero",
+        "variant": "centered",
+        "props": {
+          "heading": "Fresh vegetables, daily essentials",
+          "subheading": "Picked this morning and delivered the same day across Kathmandu Valley. No minimum order.",
+          "imageUrl": "asset:HERO/main",
+          "cta": {
+            "label": "Shop the market",
+            "href": "#products"
+          }
+        }
+      },
+      {
+        "id": "categories",
+        "type": "category-grid",
+        "props": {
+          "columns": 4,
+          "source": "shop_categories",
+          "limit": 8,
+          "heading": "Shop by aisle"
+        }
+      },
+      {
+        "id": "picks",
+        "type": "product-carousel",
+        "props": {
+          "heading": "Today's picks",
+          "source": "latest",
+          "limit": 8
+        }
+      },
+      {
+        "id": "promise",
+        "type": "feature-list",
+        "props": {
+          "heading": "Why neighbours order here",
+          "items": [
+            "Picked before sunrise, packed by hand",
+            "Cash on delivery, change ready",
+            "Missing or bruised? We replace it"
+          ]
+        }
+      },
+      {
+        "id": "products",
+        "type": "product-grid",
+        "props": {
+          "heading": "New in this week",
+          "source": "latest",
+          "limit": 8,
+          "columns": 4
+        }
+      },
+      {
+        "id": "trust",
+        "type": "trust-badges",
+        "props": {
+          "items": [
+            "Same-day delivery",
+            "Cash on delivery",
+            "Freshness guarantee"
+          ]
+        }
+      },
+      {
+        "id": "footer",
+        "type": "site-footer",
+        "props": {
+          "columns": [],
+          "showPaymentBadges": true
+        }
+      }
+    ],
+    "nav": {
+      "menu": [
+        {
+          "label": "Shop",
+          "href": "#products"
+        },
+        {
+          "label": "Aisles",
+          "href": "#categories"
+        }
+      ]
+    },
+    "footer": {
+      "assetHandle": "footer-main",
+      "columns": 3,
+      "showPaymentBadges": true
+    }
+  }
+}

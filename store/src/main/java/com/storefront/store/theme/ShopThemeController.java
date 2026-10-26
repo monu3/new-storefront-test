@@ -106,6 +106,7 @@ public class ShopThemeController {
 		return themes.marketplaceFor(shop, subscribed).stream()
 				.map(t -> new MarketplaceEntry(
 						t.getId(), t.getCode(), t.getName(), t.getDescription(),
+						t.getCategory(),
 						t.shopTypeOrNull(), t.getPriceTier(),
 						themes.templatePreviewUrl(t),
 						themes.sectionCount(t.getConfig()),
@@ -309,6 +310,8 @@ public class ShopThemeController {
 			String code,
 			String name,
 			String description,
+			/** Shelf label in the gallery ("Grocery"). Null when the template has none. */
+			String category,
 			ShopType shopType,
 			ThemeTemplate.PriceTier priceTier,
 			String previewImageUrl,

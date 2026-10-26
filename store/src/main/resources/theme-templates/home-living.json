@@ -1,0 +1,133 @@
+{
+  "code": "home-living",
+  "name": "Home & Living",
+  "category": "Home & living",
+  "description": "Calm and roomy. A centred opening, a maker story and a three-column room grid.",
+  "shopType": null,
+  "sortOrder": 60,
+  "config": {
+    "schemaVersion": 1,
+    "tokens": {
+      "primary": "#5b6650",
+      "background": "#fbfaf6",
+      "foreground": "#23261f",
+      "muted": "#f0efe6",
+      "accent": "#dddcc8",
+      "border": "#e4e2d6",
+      "ring": "#5b6650",
+      "fontHeading": "'Gill Sans', 'Gill Sans MT', Calibri, sans-serif",
+      "fontBody": "Calibri, 'Segoe UI', sans-serif",
+      "radius": "0.875rem",
+      "mode": "light"
+    },
+    "sections": [
+      {
+        "id": "announcement",
+        "type": "announcement-bar",
+        "props": {
+          "text": "Free delivery on orders over Rs. 3,000",
+          "dismissible": false
+        }
+      },
+      {
+        "id": "header",
+        "type": "site-header",
+        "props": {
+          "showShopName": true,
+          "showLogo": true,
+          "showSearch": true,
+          "sticky": true,
+          "links": []
+        }
+      },
+      {
+        "id": "hero",
+        "type": "hero",
+        "variant": "centered",
+        "props": {
+          "heading": "Things for the home you actually live in",
+          "subheading": "Ceramics, linen and small furniture, chosen for daily use rather than the shelf.",
+          "imageUrl": "asset:HERO/main",
+          "cta": {
+            "label": "Shop the house",
+            "href": "#products"
+          }
+        }
+      },
+      {
+        "id": "story",
+        "type": "image-with-text",
+        "props": {
+          "heading": "Made by hand, used every day",
+          "body": "Most of what we stock comes from workshops within a day's drive — potters in Bhaktapur, a weaver in Patan, a carpenter who will repair what he sold you. We buy in small numbers and we know who made each piece.",
+          "imageUrl": "",
+          "imagePosition": "left"
+        }
+      },
+      {
+        "id": "products",
+        "type": "product-grid",
+        "props": {
+          "heading": "New in the house",
+          "source": "latest",
+          "limit": 6,
+          "columns": 3
+        }
+      },
+      {
+        "id": "categories",
+        "type": "category-grid",
+        "props": {
+          "columns": 4,
+          "source": "shop_categories",
+          "limit": 8,
+          "heading": "By room"
+        }
+      },
+      {
+        "id": "trust",
+        "type": "trust-badges",
+        "props": {
+          "items": [
+            "Handmade in Nepal",
+            "Care instructions included",
+            "Delivery across the Valley"
+          ]
+        }
+      },
+      {
+        "id": "newsletter",
+        "type": "newsletter",
+        "props": {
+          "heading": "New pieces, once a month",
+          "subheading": "What came into the shop, and who made it."
+        }
+      },
+      {
+        "id": "footer",
+        "type": "site-footer",
+        "props": {
+          "columns": [],
+          "showPaymentBadges": true
+        }
+      }
+    ],
+    "nav": {
+      "menu": [
+        {
+          "label": "Shop",
+          "href": "#products"
+        },
+        {
+          "label": "Rooms",
+          "href": "#categories"
+        }
+      ]
+    },
+    "footer": {
+      "assetHandle": "footer-main",
+      "columns": 3,
+      "showPaymentBadges": true
+    }
+  }
+}

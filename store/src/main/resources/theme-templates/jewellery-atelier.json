@@ -1,0 +1,123 @@
+{
+  "code": "jewellery-atelier",
+  "name": "Jewellery Atelier",
+  "category": "Jewellery",
+  "description": "Still and deliberate. Sharp corners, a sparse collection and a note on the metals.",
+  "shopType": null,
+  "sortOrder": 70,
+  "config": {
+    "schemaVersion": 1,
+    "tokens": {
+      "primary": "#b08d57",
+      "background": "#fbf9f5",
+      "foreground": "#1f1b16",
+      "muted": "#f3efe7",
+      "accent": "#e6d7bd",
+      "border": "#e5ddcf",
+      "ring": "#b08d57",
+      "fontHeading": "Optima, 'Palatino Linotype', Georgia, serif",
+      "fontBody": "Georgia, serif",
+      "radius": "0rem",
+      "mode": "light"
+    },
+    "sections": [
+      {
+        "id": "announcement",
+        "type": "announcement-bar",
+        "props": {
+          "text": "Hallmarked gold · Insured delivery across Nepal",
+          "dismissible": false
+        }
+      },
+      {
+        "id": "header",
+        "type": "site-header",
+        "props": {
+          "showShopName": true,
+          "showLogo": true,
+          "showSearch": true,
+          "sticky": true,
+          "links": []
+        }
+      },
+      {
+        "id": "hero",
+        "type": "hero",
+        "variant": "centered",
+        "props": {
+          "heading": "Pieces made to be kept",
+          "subheading": "Hand-finished gold and silver, made in our own workshop in Kathmandu.",
+          "imageUrl": "asset:HERO/main",
+          "cta": {
+            "label": "View the collection",
+            "href": "#products"
+          }
+        }
+      },
+      {
+        "id": "products",
+        "type": "product-grid",
+        "props": {
+          "heading": "The collection",
+          "source": "latest",
+          "limit": 6,
+          "columns": 3
+        }
+      },
+      {
+        "id": "story",
+        "type": "image-with-text",
+        "props": {
+          "heading": "Made in our workshop",
+          "body": "Every piece is drawn, cast and finished by two goldsmiths we have worked with for eleven years. Repairs come back to the same bench, which is why we can promise them for as long as you own the piece.",
+          "imageUrl": "",
+          "imagePosition": "right"
+        }
+      },
+      {
+        "id": "metals",
+        "type": "rich-text",
+        "props": {
+          "heading": "About the metals",
+          "body": "We work in 22-carat gold and 92.5 silver, both hallmarked. Stones are bought from a single dealer in Asan and come with their weight noted on the bill.\n\nIf you are commissioning something, bring a photograph or a sketch. We will tell you what is possible before you pay a deposit."
+        }
+      },
+      {
+        "id": "trust",
+        "type": "trust-badges",
+        "props": {
+          "items": [
+            "Hallmarked",
+            "Lifetime repairs",
+            "Insured delivery"
+          ]
+        }
+      },
+      {
+        "id": "footer",
+        "type": "site-footer",
+        "props": {
+          "columns": [],
+          "showPaymentBadges": true
+        }
+      }
+    ],
+    "nav": {
+      "menu": [
+        {
+          "label": "Collection",
+          "href": "#products"
+        },
+        {
+          "label": "Workshop",
+          "href": "#story"
+        }
+      ]
+    },
+    "footer": {
+      "assetHandle": "footer-main",
+      "columns": 3,
+      "showPaymentBadges": true
+    }
+  }
+}

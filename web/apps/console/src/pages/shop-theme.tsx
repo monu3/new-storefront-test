@@ -43,6 +43,13 @@ export function ShopTheme({ auth }: { auth: AuthAdapter }) {
   const [loading, setLoading] = useState(true);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [status, setStatus] = useState<string | null>(null);
+  /**
+   * The shelf the owner is looking at.
+   *
+   * <p>Client-side because the whole catalogue arrives in one request: fourteen cards are not
+   * worth a round trip per chip, and filtering here keeps the count on each chip honest.
+   */
+  const [shelf, setShelf] = useState<string>('All');
 
   /**
    * The shop's real storefront payload, for the previews.
@@ -126,6 +133,16 @@ export function ShopTheme({ auth }: { auth: AuthAdapter }) {
   }, [auth]);
 
   const activeTheme = themes.find((theme) => theme.published) ?? themes[0] ?? null;
+
+  // In catalogue order, not alphabetical: the API already sorts by sortOrder, and that is the
+  // order an owner browsing "what have you got?" expects to see.
+  const shelves = Array.from(
+    new Set(marketplace.map((template) => template.category?.trim()).filter((c): c is string => !!c)),
+  );
+  const shownTemplates =
+    shelf === 'All'
+      ? marketplace
+      : marketplace.filter((template) => (template.category ?? '').trim() === shelf);
 
   async function useTemplate(template: MarketplaceEntry) {
     setBusyId(template.id);
@@ -238,16 +255,45 @@ export function ShopTheme({ auth }: { auth: AuthAdapter }) {
       </section>
 
       <section aria-labelledby="templates">
-        <div className="mb-4 flex items-baseline justify-between gap-4">
-          <h2 id="templates" className="text-lg font-semibold">
-            Start from a template
-          </h2>
+        <div className="mb-4 flex flex-wrap items-baseline justify-between gap-4">
+          <div>
+            <h2 id="templates" className="text-lg font-semibold">
+              Ready-made templates
+            </h2>
+            <p className="mt-1 text-sm text-muted-foreground">
+              Built for a trade, not a template with your name dropped in. Pick one, then change
+              anything you like.
+            </p>
+          </div>
           <p className="text-xs text-muted-foreground">
             {marketplace.length === 0
               ? 'No templates available for this shop'
-              : `${marketplace.length} available`}
+              : shelf === 'All'
+                ? `${marketplace.length} available`
+                : `${shownTemplates.length} of ${marketplace.length}`}
           </p>
         </div>
+
+        {shelves.length > 0 ? (
+          <div role="group" aria-label="Filter templates by category" className="mb-5 flex flex-wrap gap-2">
+            {['All', ...shelves].map((option) => (
+              <button
+                key={option}
+                type="button"
+                aria-pressed={shelf === option}
+                onClick={() => setShelf(option)}
+                className={cn(
+                  'rounded-full border px-3.5 py-1.5 text-xs font-medium transition-colors',
+                  shelf === option
+                    ? 'border-primary bg-primary text-primary-foreground'
+                    : 'border-border bg-card text-muted-foreground hover:border-primary/40 hover:text-foreground',
+                )}
+              >
+                {option}
+              </button>
+            ))}
+          </div>
+        ) : null}
 
         {marketplace.length === 0 ? (
           <div className="rounded-2xl border border-dashed border-border px-6 py-10 text-center">
@@ -257,12 +303,20 @@ export function ShopTheme({ auth }: { auth: AuthAdapter }) {
               shop right now.
             </p>
           </div>
+        ) : shownTemplates.length === 0 ? (
+          <div className="rounded-2xl border border-dashed border-border px-6 py-10 text-center">
+            <p className="text-sm font-medium">Nothing in this shelf</p>
+            <p className="mx-auto mt-1 max-w-md text-sm text-muted-foreground">
+              Choose another category, or see everything.
+            </p>
+          </div>
         ) : (
           <div className="grid gap-5 sm:grid-cols-2 xl:grid-cols-3">
-            {marketplace.map((template) => (
+            {shownTemplates.map((template) => (
               <ThemeCard
                 key={template.id}
                 name={template.name}
+                category={template.category ?? undefined}
                 note={
                   template.description?.trim() ? template.description : `${template.sectionCount} sections`
                 }
@@ -309,6 +363,7 @@ export function ShopTheme({ auth }: { auth: AuthAdapter }) {
  */
 function ThemeCard({
   name,
+  category,
   note,
   badge,
   live = false,
@@ -317,6 +372,8 @@ function ThemeCard({
   action,
 }: {
   name: string;
+  /** Shelf the template belongs to. Omitted for a theme the shop already owns. */
+  category?: string;
   note: string;
   badge?: string;
   live?: boolean;
@@ -355,6 +412,16 @@ function ThemeCard({
         )}
       >
         <div className="min-w-0">
+          {category ? (
+            <p
+              className={cn(
+                'text-[10px] font-medium uppercase tracking-[0.09em]',
+                live ? 'text-background/60' : 'text-muted-foreground',
+              )}
+            >
+              {category}
+            </p>
+          ) : null}
           <div className="flex items-center gap-2">
             <p className="truncate text-sm font-semibold">{name}</p>
             {badge ? (
