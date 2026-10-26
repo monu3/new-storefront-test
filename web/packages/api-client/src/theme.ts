@@ -59,6 +59,13 @@ export interface MarketplaceEntry {
   priceTier: ThemePriceTier;
   previewImageUrl: string | null;
   sectionCount: number;
+  /**
+   * The template's theme config, so the gallery can render it before installing.
+   *
+   * <p>Preview images were the original plan, but no template in this database has one — every
+   * card would have shown a placeholder. Rendering the config is both accurate and free.
+   */
+  config: string;
 }
 
 export interface TemplateView {

@@ -40,6 +40,19 @@ interface ThemeEditorState {
   reset(): void;
 }
 
+/**
+ * Whether two theme documents are the same.
+ *
+ * <p>`dirty` used to be set to `true` by undo as well as by every edit, so undoing your way back
+ * to the published document still claimed there were unpublished changes and left Publish
+ * enabled — the owner then republished an identical theme just to clear the badge. Comparing the
+ * draft against `saved` is the only definition of "changed" that survives an undo.
+ */
+function sameConfig(a: ThemeConfig | null, b: ThemeConfig | null): boolean {
+  if (!a || !b) return a === b;
+  return JSON.stringify(a) === JSON.stringify(b);
+}
+
 function clone(config: ThemeConfig | null): ThemeConfig | null {
   return config ? (structuredClone(config) as ThemeConfig) : null;
 }
@@ -151,7 +164,7 @@ export const useThemeEditor = create<ThemeEditorState>()((set, get) => ({
       past: state.past.slice(0, -1),
       future: draft ? [...state.future, draft] : state.future,
       draft: previous,
-      dirty: true,
+      dirty: !sameConfig(previous, state.saved),
     }));
   },
 
@@ -163,7 +176,7 @@ export const useThemeEditor = create<ThemeEditorState>()((set, get) => ({
       past: draft ? [...state.past, draft] : state.past,
       future: state.future.slice(0, -1),
       draft: next,
-      dirty: true,
+      dirty: !sameConfig(next, state.saved),
     }));
   },
 

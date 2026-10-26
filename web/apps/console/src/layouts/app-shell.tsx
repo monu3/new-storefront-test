@@ -28,7 +28,7 @@ import {
   Users,
 } from 'lucide-react';
 
-import { APP_ROLE, resolveConsoleUser } from '@store-app/auth';
+import { APP_ROLE, readEnv, resolveConsoleUser } from '@store-app/auth';
 import type { AuthAdapter } from '@store-app/auth';
 import { authorizedFetch } from '@store-app/auth';
 import { dashboard as dashboardApi } from '@store-app/api-client';
@@ -207,14 +207,19 @@ export function AppShell({ auth }: { auth: AuthAdapter }) {
                     person's own name made an operator's sidebar look like an unconfigured shop. */}
                 {ownsShop ? (stats?.shopName ?? 'Your shop') : (user.session.fullName ?? 'Platform operator')}
               </p>
+              {/* Absolute, because the storefront is a different app. This pointed at
+                  `/preview/<slug>` inside the console router, which has no such route — the one
+                  link whose entire job is "see your shop" landed on Not Found. */}
               {ownsShop ? (
-                <Link
-                  to={`/preview/${stats?.shopSlug ?? ''}`}
+                <a
+                  href={`${readEnv('VITE_STOREFRONT_URL') ?? 'http://localhost:3000'}/s/${stats?.shopSlug ?? ''}`}
+                  target="_blank"
+                  rel="noreferrer"
                   className="mt-0.5 inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
                 >
                   Visit your shop
                   <ChevronRight className="size-3" aria-hidden />
-                </Link>
+                </a>
               ) : (
                 <p className="mt-0.5 text-xs text-muted-foreground">Platform operator</p>
               )}

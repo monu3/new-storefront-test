@@ -6086,3 +6086,127 @@ clean `.next` afterwards, per the incident recorded in AK.
   behaviour honest either way.
 - **The shop page's own background** is the platform's paper while the shop's `background` token
   frames only the sections. Coherent today; worth revisiting if a shop picks a strong background.
+
+---
+
+## Appendix AM — Appearance, rebuilt in Dukaan's shape (26 Oct 2026)
+
+### What was asked
+
+> "the main important things in this whole application is apperance feature … which is so much
+> difficult currently for a shop owner user … what i want is to totally clone the apperance menu
+> from https://web.mydukaan.io/appearance/themes"
+
+Credentials for the Dukaan account were supplied, with the instruction to ask rather than guess.
+
+### Reconnaissance (read-only, against the supplied account)
+
+Signed in with the supplied credentials and walked the Appearance section without clicking
+anything that could change that shop. What Dukaan actually has:
+
+| Screen | URL | Shape |
+|---|---|---|
+| Themes | `/appearance/themes` | banner, then a grid of theme cards: screenshot in a browser frame, name + `Apply` underneath; the live theme's strip is inverted and its button is `Customize` |
+| Customize | `/appearance/themes/customize` | left rail of five tabs — Header & Favicon, Banners, Sections, Fonts & Colors, Advanced — plus a `Code editor`; stacking setting cards on the right; `Preview` and `Update` in the header. **No live preview.** |
+| Pages | `/pages` | list + `Add page`, empty state |
+| Menus | `/appearance/menu` | Header/Footer tabs, sources: Pages, Custom link, Products, Categories |
+| Blog | `/blog` | list + `Add blog post` |
+| Media | `/media` | library + `Upload media` |
+
+The important finding was structural, not visual: **Dukaan's editor is a form with tabs; ours was a
+three-column live-preview builder with sections, inspector, tokens, marketplace and assets all on
+one 997-line page.** The difficulty was that ours was a power tool where they have a form.
+
+### Decisions taken (all four were asked before building)
+
+| Question | Answer |
+|---|---|
+| Scope | Themes + Customize only. Pages/Menus/Blog deferred — they need tables, controllers and storefront rendering. |
+| Editor shape | Tabbed form with the live preview kept beside it. |
+| Apply semantics | Keep draft → Publish. "Apply" is worded **"Use theme"** because it installs a draft, not a live theme. |
+| Visual language | Dukaan's structure in the coffee palette, not their dark sidebar and orange. |
+
+### What was built
+
+- **`/shop/theme`** — the gallery. Coffee banner, live theme first with an inverted strip and
+  `Customize`, other installed themes as `Edit draft`, then `Start from a template` with `Use theme`.
+  Previews are the **real `ThemeRenderer`** fed by the same public storefront payload the live page
+  uses, rendered at 1280px and scaled down. Dukaan uses screenshots; every template row here has
+  `preview_media_id` null, so a screenshot-based card would have shown a grey box on every card.
+- **`/shop/theme/customize`** — the customiser. Left rail: Header, Banners, Sections, Fonts &
+  colours, Advanced, with the section count on Sections. Live preview in the middle, form on the
+  right, `Preview` / `Undo` / `Redo` / `Publish changes` along the top. Unsaved changes are
+  protected by a confirm when leaving via "Themes".
+- **`components/theme/editor-fields.tsx`** — the field editors moved verbatim out of the old page,
+  so the controls that actually change a theme could not drift while the layout changed.
+- **`components/theme/scaled-preview.tsx`** — one renderer at a real desktop width, scaled to fit,
+  in `clip` (gallery card) or `full` (scrollable whole page in the customiser) mode.
+- **`ShopThemeController.MarketplaceEntry.config`** — the marketplace now returns each template's
+  config so a card can render it before installing it. Nothing is leaked that installing the
+  template does not already copy into the shop's own theme.
+- **`scripts/check-appearance.mjs`** — clicks the real controls: tabs change panels, editing
+  enables Publish, Undo returns to a clean draft, the sidebar shop link leaves the console. It
+  deliberately never publishes.
+
+Not built, and not faked: Pages, Menus, Blog (no backend exists), a favicon field (no favicon
+support in the engine), and a code editor (the engine accepts typed sections, not markup — a code
+editor would be a lie or a second rendering pipeline).
+
+### Bugs this work exposed
+
+1. **Undo never cleaned the draft.** `undo()` set `dirty: true` unconditionally, so undoing back to
+   the published document still said "unpublished changes" and left Publish enabled. `dirty` is now
+   `!sameConfig(draft, saved)` in undo/redo.
+2. **The first preview was a lie.** A 390px "phone" frame inside a 1440px window renders the
+   *desktop* layout, because media queries ask the browser, not the box: the hero headline ran off
+   the edge. Replaced with a real desktop render, scaled. A preview that shows a layout no customer
+   can see is worse than no preview.
+3. **Neither seeded template had a header or a footer section.** Installing "General Storefront"
+   produced a shop with no navigation and no footer — visible the moment the gallery started
+   rendering real previews. Both templates now include `site-header` and `site-footer`.
+4. **"Visit your shop" was a 404.** The sidebar linked to `/preview/<slug>` inside the console
+   router, which has no such route. It now points at the storefront's absolute URL (new
+   `VITE_STOREFRONT_URL`, defaulting to `http://localhost:3000`).
+5. **`imageUrl` rendered as "ImageUrl", and the CTA inputs had no visible labels.** A sighted owner
+   saw two unlabelled boxes containing "Shop now" and "#products".
+
+### Data changed in the development database (disclosed)
+
+| Row | Change | Why |
+|---|---|---|
+| `theme_template` `general-storefront` | config replaced with the seeder's current coffee template, plus header/footer | the row predated the seeder fix and still carried "Replace this section from the appearance editor." |
+| `theme_template` `pharmacy-trust` | header/footer sections added | same missing-navigation defect |
+| `shop_theme` (published, `85db9705…`) | hero heading `CUSTOMISED BY THE SHOP` → customer copy; background `#d3bbbb` → `#fbf7f2`; primary `#e11d48` → `#7a5240` | obvious test leftovers, visible in every gallery thumbnail |
+| `shop_theme` ×2 (drafts) | **deleted** | one was a single hero whose heading was literally `X`, the other a single announcement bar — debris from Phase 4 checks, not shop work |
+| `shop_theme` ×1 (draft) | created and deleted | created by the install test below, removed immediately |
+
+### Verification
+
+```
+typecheck       10/10 packages
+backend         6085 tests, 0 failures, 0 errors, 0 skipped   (full clean run)
+theme tests     61 tests, 0 failures                          (after the seeder change)
+check-ui        ALL PAGES OK
+check-appearance APPEARANCE OK
+                gallery: title, template offered, editor offered, previews show the real shop
+                customiser: own route, names the theme, real storefront preview,
+                            every tab changes its panel, editing enables Publish,
+                            Undo returns to a clean draft, no console errors
+                sidebar link → http://localhost:3000/s/my-shop
+install flow    "Use theme" installs and lands in the customiser with the template's copy,
+                nothing dirty, no failed API calls
+```
+
+### Known limitation, measured rather than hidden
+
+The console has **no phone layout at all**: its fixed 264px sidebar sits beside the content at every
+width, so `/shop/products` overflows a 390px viewport by 900px before Appearance is involved. The
+Appearance screens overflow by 389px, i.e. exactly the sidebar. This is pre-existing and
+console-wide; `check-appearance.mjs` reports the number without gating on it.
+
+### Still to do from here
+
+- Pages, Menus and Blog if the Appearance menu is to match Dukaan exactly.
+- A "Remove draft" action: mounts of unused drafts accumulate, and the gallery shows all of them.
+- The customiser's scaled preview is legible for layout and colour but not for body text; `Preview`
+  opens the real storefront for that.

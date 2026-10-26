@@ -22,6 +22,7 @@ import { NotFound } from './pages/not-found';
 import { LoginPage } from './pages/login';
 import { ForbiddenPage } from './pages/forbidden';
 import { ShopTheme } from './pages/shop-theme';
+import { ShopThemeCustomize } from './pages/shop-theme-customize';
 import { ShopDashboard } from './pages/shop-dashboard';
 import { ShopOrders } from './pages/shop-orders';
 import { ShopProducts } from './pages/shop-products';
@@ -220,6 +221,14 @@ const router = createBrowserRouter([
         element: (
           <RequireRole auth={auth} roles={['ROLE_SHOP']}>
             <ShopTheme auth={auth} />
+          </RequireRole>
+        ),
+      },
+      {
+        path: 'shop/theme/customize',
+        element: (
+          <RequireRole auth={auth} roles={['ROLE_SHOP']}>
+            <ShopThemeCustomize auth={auth} />
           </RequireRole>
         ),
       },

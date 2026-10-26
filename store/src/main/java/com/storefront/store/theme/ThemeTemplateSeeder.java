@@ -93,6 +93,9 @@ public class ThemeTemplateSeeder implements ApplicationRunner {
 				    { "id": "announcement", "type": "announcement-bar",
 				      "props": { "text": "Licensed pharmacy · Prescriptions accepted · Free delivery over Rs. 500",
 				                 "dismissible": false } },
+				    { "id": "header", "type": "site-header",
+				      "props": { "showShopName": true, "showLogo": true, "showSearch": true,
+				                 "sticky": true, "links": [] } },
 				    { "id": "hero-1", "type": "hero", "variant": "split-image",
 				      "props": { "heading": "Your neighbourhood pharmacy",
 				                 "subheading": "Genuine medicines, dispensed by licensed pharmacists. Send your prescription and a pharmacist will confirm before delivery.",
@@ -119,7 +122,9 @@ public class ThemeTemplateSeeder implements ApplicationRunner {
 				                   { "q": "Can I return a medicine?", "a": "Sealed items only, and only where the law permits. Opened medicines cannot be returned." }
 				                 ] } },
 				    { "id": "trust", "type": "trust-badges",
-				      "props": { "items": ["Licensed pharmacy", "Pharmacist reviewed", "Cash on delivery"] } }
+				      "props": { "items": ["Licensed pharmacy", "Pharmacist reviewed", "Cash on delivery"] } },
+				    { "id": "footer", "type": "site-footer",
+				      "props": { "columns": [], "showPaymentBadges": true } }
 				  ],
 				  "nav": { "menu": [
 				    { "label": "Medicines", "href": "#products" },
@@ -143,6 +148,9 @@ public class ThemeTemplateSeeder implements ApplicationRunner {
 				  "sections": [
 				    { "id": "announcement", "type": "announcement-bar",
 				      "props": { "text": "Free local delivery over Rs. 2,000", "dismissible": true } },
+				    { "id": "header", "type": "site-header",
+				      "props": { "showShopName": true, "showLogo": true, "showSearch": true,
+				                 "sticky": true, "links": [] } },
 				    { "id": "hero-1", "type": "hero", "variant": "split-image",
 				      "props": { "heading": "Your shop, online",
 				                 "subheading": "Browse what we stock and order for delivery across Nepal.",
@@ -159,7 +167,9 @@ public class ThemeTemplateSeeder implements ApplicationRunner {
 				    { "id": "all-products", "type": "product-grid",
 				      "props": { "source": "latest", "limit": 8, "columns": 4 } },
 				    { "id": "trust", "type": "trust-badges",
-				      "props": { "items": ["Cash on delivery", "Bank transfer", "Secure checkout"] } }
+				      "props": { "items": ["Cash on delivery", "Bank transfer", "Secure checkout"] } },
+				    { "id": "footer", "type": "site-footer",
+				      "props": { "columns": [], "showPaymentBadges": true } }
 				  ],
 				  "nav": { "menu": [ { "label": "Shop", "href": "#products" } ] },
 				  "footer": { "assetHandle": "footer-main", "columns": 3, "showPaymentBadges": true }

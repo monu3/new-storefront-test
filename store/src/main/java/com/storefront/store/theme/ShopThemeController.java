@@ -108,7 +108,8 @@ public class ShopThemeController {
 						t.getId(), t.getCode(), t.getName(), t.getDescription(),
 						t.shopTypeOrNull(), t.getPriceTier(),
 						themes.templatePreviewUrl(t),
-						themes.sectionCount(t.getConfig())))
+						themes.sectionCount(t.getConfig()),
+						t.getConfig()))
 				.toList();
 	}
 
@@ -287,6 +288,22 @@ public class ShopThemeController {
 			boolean hasPublishedTheme) {
 	}
 
+	/**
+	 * One template in the marketplace.
+	 *
+	 * <p><b>`config` is included so the gallery can render a real preview.</b> Without it the card
+	 * could only show a photograph — and `preview_media_id` is null on every template that has ever
+	 * been seeded here, so in practice it would show nothing at all. A shop owner choosing a theme
+	 * is choosing a layout; making them install it first to see it is exactly the friction the
+	 * gallery exists to remove.
+	 *
+	 * <p>This leaks nothing: installing a template already copies this exact config into the shop's
+	 * own theme, where the owner can read and edit it.
+	 *
+	 * <p>Cost, stated rather than hidden: the list now carries one config per template. Each is a
+	 * few KB and the list is filtered to the shop's type and tier, so it stays small in practice.
+	 * When the catalogue grows past a screenful, this becomes a per-card fetch.
+	 */
 	public record MarketplaceEntry(
 			UUID id,
 			String code,
@@ -295,7 +312,8 @@ public class ShopThemeController {
 			ShopType shopType,
 			ThemeTemplate.PriceTier priceTier,
 			String previewImageUrl,
-			int sectionCount) {
+			int sectionCount,
+			String config) {
 	}
 
 	public record AssetView(
