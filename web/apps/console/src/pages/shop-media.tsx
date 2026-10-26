@@ -244,7 +244,7 @@ export function ShopMediaLibrary({ auth }: { auth: AuthAdapter }) {
       {uploadError ? (
         <div
           role="alert"
-          className="flex items-start gap-2 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700"
+          className="flex items-start gap-2 rounded-lg border border-red-200 bg-destructive/10 px-4 py-3 text-sm text-destructive"
         >
           <AlertTriangle className="mt-0.5 size-4 shrink-0" aria-hidden />
           <span>{uploadError}</span>
@@ -310,7 +310,7 @@ export function ShopMediaLibrary({ auth }: { auth: AuthAdapter }) {
               </p>
             </div>
             {remove.error ? (
-              <p role="alert" className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">
+              <p role="alert" className="rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">
                 {remove.error instanceof Error ? remove.error.message : 'The delete failed'}
               </p>
             ) : null}

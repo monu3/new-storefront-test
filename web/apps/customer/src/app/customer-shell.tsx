@@ -26,6 +26,12 @@ import { cn } from '@store-app/ui';
  * <p><b>A client component, deliberately.</b> It reads a browser token, which does not exist during
  * server rendering. Making only this a client component keeps the pages themselves server-rendered,
  * which is what makes a storefront indexable and share-previewable (D1).
+ *
+ * <p><b>Shape: a floating bar over warm paper.</b> The reference for this app (shop.com) puts its
+ * navigation in a rounded, elevated strip rather than a full-width rule with a hairline underneath.
+ * That is the part worth taking — a marketplace's chrome should recede so the shops and products
+ * are what the eye lands on. The bar is translucent with a blur so content scrolls *under* it
+ * rather than being abruptly cut off by an opaque band.
  */
 
 export function CustomerShell({ children }: { children: ReactNode }) {
@@ -79,22 +85,30 @@ export function CustomerShell({ children }: { children: ReactNode }) {
   }, [pathname, router]);
 
   return (
-    <div className="flex min-h-dvh flex-col">
+    <div className="flex min-h-dvh flex-col bg-background">
       <a
         href="#main"
-        className="sr-only focus:not-sr-only focus:absolute focus:left-4 focus:top-4 focus:z-50 focus:rounded-md focus:bg-background focus:px-4 focus:py-2 focus:ring-1"
+        className="sr-only focus:not-sr-only focus:absolute focus:left-4 focus:top-4 focus:z-50 focus:rounded-full focus:bg-card focus:px-4 focus:py-2 focus:ring-2 focus:ring-ring"
       >
         Skip to content
       </a>
 
-      <header className="sticky top-0 z-40 border-b bg-background/95 backdrop-blur">
-        <div className="mx-auto flex h-14 max-w-6xl items-center gap-3 px-4">
-          <Link href="/" className="flex shrink-0 items-center gap-2 font-semibold">
-            <Store className="size-5" aria-hidden />
-            store.app
+      {/* ------------------------------------------------------------- top bar */}
+      <header className="sticky top-0 z-40 px-3 pt-3 sm:px-5 sm:pt-4">
+        <div className="mx-auto flex h-14 max-w-7xl items-center gap-2 rounded-full border border-border/80 bg-card/85 px-2 shadow-sm backdrop-blur-xl sm:gap-3 sm:px-3">
+          <Link
+            href="/"
+            className="flex shrink-0 items-center gap-2 rounded-full py-1 pl-2 pr-3 transition-colors hover:bg-secondary/60"
+          >
+            {/* The mark is the accent rather than another icon in the text colour: with one warm
+                accent in the palette, this is the single place the brand is allowed to appear. */}
+            <span className="grid size-8 place-items-center rounded-full bg-primary text-primary-foreground">
+              <Store className="size-4" aria-hidden />
+            </span>
+            <span className="text-[15px] font-semibold tracking-tight">store.app</span>
           </Link>
 
-          <nav className="hidden items-center gap-1 sm:flex" aria-label="Main">
+          <nav className="hidden items-center gap-0.5 md:flex" aria-label="Main">
             <ShellLink href="/shops" pathname={pathname}>
               Browse
             </ShellLink>
@@ -116,18 +130,20 @@ export function CustomerShell({ children }: { children: ReactNode }) {
                   <Heart className="size-4" aria-hidden />
                   Wishlist
                 </ShellLink>
-                <ShellLink href="/account/addresses" pathname={pathname}>
-                  <MapPin className="size-4" aria-hidden />
-                  Addresses
-                </ShellLink>
               </>
             ) : null}
           </nav>
 
-          <div className="ml-auto flex items-center gap-2">
+          <div className="ml-auto flex items-center gap-1.5">
             {ready && signedIn ? (
               <>
-                <Button asChild variant="outline" size="sm">
+                <Button asChild variant="ghost" size="sm" className="rounded-full">
+                  <Link href="/account/addresses" aria-label="Addresses" title="Addresses">
+                    <MapPin className="size-4" aria-hidden />
+                    <span className="hidden lg:inline">Addresses</span>
+                  </Link>
+                </Button>
+                <Button asChild variant="outline" size="sm" className="rounded-full">
                   <Link href="/account">
                     <User className="size-4" aria-hidden />
                     <span className="hidden max-w-32 truncate sm:inline">
@@ -138,25 +154,32 @@ export function CustomerShell({ children }: { children: ReactNode }) {
                 </Button>
                 <SignOutButton />
               </>
-            ) : ready ? (
-              <Button asChild size="sm">
+            ) : (
+              /*
+                "Sign in" immediately, not a skeleton. Initialisation performs a silent SSO check
+                against Keycloak, and on a cold load that round trip measured 3.5–6 seconds here —
+                during which this header showed an empty grey pill. That is indistinguishable from a
+                broken control, and it sat in the most prominent corner of the page.
+
+                "Sign in" is the honest default: the storefront is public and most visitors are
+                signed out. A customer who *is* signed in sees it swap to their account a moment
+                later, which is a smaller lie than an empty button. Both states are the same height,
+                so the bar does not reflow either way.
+              */
+              <Button asChild size="sm" className="rounded-full px-4">
                 <Link href="/login">Sign in</Link>
               </Button>
-            ) : (
-              // A placeholder the same width as the button it replaces, so the header does not
-              // reflow when the session resolves.
-              <span className="h-9 w-20 animate-pulse rounded-md bg-muted" aria-hidden />
             )}
           </div>
         </div>
 
         {/*
-          Account links again on a narrow screen. Hidden rather than absent above sm, because a
+          Account links again on a narrow screen. Hidden rather than absent above md, because a
           customer on a phone cannot reach their orders otherwise.
         */}
         {ready && signedIn ? (
           <nav
-            className="flex items-center gap-1 overflow-x-auto border-t px-4 py-1.5 sm:hidden"
+            className="mx-auto flex max-w-7xl items-center gap-1 overflow-x-auto px-2 pt-1.5 md:hidden"
             aria-label="Account"
           >
             <ShellLink href="/account/orders" pathname={pathname}>
@@ -172,13 +195,75 @@ export function CustomerShell({ children }: { children: ReactNode }) {
         ) : null}
       </header>
 
-      <main id="main" className="mx-auto w-full max-w-6xl flex-1 px-4 py-6">
+      <main id="main" className="mx-auto w-full max-w-7xl flex-1 px-4 py-8 sm:px-6">
         {children}
       </main>
 
-      <footer className="border-t py-6 text-center text-xs text-muted-foreground">
-        store.app — a marketplace for Nepali shops
+      {/* ------------------------------------------------------------- footer */}
+      <footer className="mt-16 border-t border-border/70 bg-secondary/40">
+        <div className="mx-auto max-w-7xl px-4 py-12 sm:px-6">
+          <div className="grid gap-10 sm:grid-cols-2 lg:grid-cols-4">
+            <div className="lg:col-span-2">
+              <div className="flex items-center gap-2">
+                <span className="grid size-8 place-items-center rounded-full bg-primary text-primary-foreground">
+                  <Store className="size-4" aria-hidden />
+                </span>
+                <span className="text-[15px] font-semibold tracking-tight">store.app</span>
+              </div>
+              <p className="mt-4 max-w-sm text-sm text-muted-foreground">
+                A marketplace for Nepali shops. Buy directly from the shop that sells it — no
+                middleman deciding what you see.
+              </p>
+            </div>
+
+            <FooterColumn
+              title="Shopping"
+              links={[
+                { href: '/shops', label: 'Browse shops' },
+                { href: '/search', label: 'Search products' },
+              ]}
+            />
+            <FooterColumn
+              title="Your account"
+              links={[
+                { href: '/login', label: 'Sign in' },
+                { href: '/account/orders', label: 'Orders' },
+                { href: '/account/wishlist', label: 'Wishlist' },
+              ]}
+            />
+          </div>
+
+          <div className="mt-10 flex flex-col gap-2 border-t border-border/70 pt-6 text-xs text-muted-foreground sm:flex-row sm:items-center sm:justify-between">
+            <p>© {new Date().getFullYear()} store.app</p>
+            <p>Made for the shops on your street.</p>
+          </div>
+        </div>
       </footer>
+    </div>
+  );
+}
+
+function FooterColumn({
+  title,
+  links,
+}: {
+  title: string;
+  links: Array<{ href: string; label: string }>;
+}) {
+  return (
+    <div>
+      <p className="text-xs font-medium uppercase tracking-[0.08em] text-muted-foreground">
+        {title}
+      </p>
+      <ul className="mt-4 space-y-2.5 text-sm">
+        {links.map((link) => (
+          <li key={link.href}>
+            <Link href={link.href} className="transition-colors hover:text-primary">
+              {link.label}
+            </Link>
+          </li>
+        ))}
+      </ul>
     </div>
   );
 }
@@ -198,8 +283,12 @@ function ShellLink({
       href={href}
       aria-current={active ? 'page' : undefined}
       className={cn(
-        'inline-flex shrink-0 items-center gap-1.5 rounded-md px-3 py-1.5 text-sm whitespace-nowrap transition-colors',
-        active ? 'bg-muted font-medium' : 'text-muted-foreground hover:text-foreground',
+        // Pill, because the bar itself is a pill: a square item inside a fully rounded container
+        // reads as a mistake rather than a style.
+        'inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full px-3.5 py-1.5 text-sm transition-colors',
+        active
+          ? 'bg-foreground font-medium text-background'
+          : 'text-muted-foreground hover:bg-secondary/60 hover:text-foreground',
       )}
     >
       {children}
@@ -213,6 +302,7 @@ function SignOutButton() {
     <Button
       size="sm"
       variant="ghost"
+      className="rounded-full"
       disabled={busy}
       aria-label="Sign out"
       title="Sign out"

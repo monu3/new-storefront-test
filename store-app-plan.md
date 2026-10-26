@@ -5747,3 +5747,342 @@ password for all: iloveu-Phase85!
 ```
 
 Two DRAFT shops named "Phase Eighty Five Books" remain in the dev database.
+
+## Appendix AK — REA, the UI/UX audit, and the light coffee palette
+
+### REA (reverse-engineering agent) — installed and connected
+
+`rea-agents@6.7.0` (MIT), a local CLI plus MCP server that inspects native binaries, JavaScript and
+Electron apps, and websites. Setup was inspected statically first — the tarball unpacked and read —
+before anything was executed.
+
+**What was approved, and what it changed:**
+
+| Action | Target |
+|---|---|
+| `configure_client:opencode` | `~/.config/opencode/opencode.json` — adds `mcp.rea`, backup at `.rea.backup` |
+| `install_skill` | `~/.agents/skills/reverse-engineer-anything` |
+
+Flags used: `--client opencode --yes`. **`--install-hopper` was not passed** — no native decompiler
+is installed, and nothing in this task needs one. The command is reversible via `rea uninstall`.
+
+**Verified rather than assumed:** the config diff is exactly one added `mcp.rea` block; the skill is
+on disk; `rea --version` → 6.7.0; the MCP server registered **207 tools**; and a real
+`capture_browser_scenario` against shop.com launched Chrome, navigated, and returned a signed
+evidence record (`ev_f4655a40…`). A config entry alone would not have proven it works.
+
+REA is legitimately relevant here — it lists websites as a target ("page structure, scripts,
+network observations and requested screenshots") — but plain browser inspection is still the better
+tool for judging a marketing page's design. REA is for the JavaScript behind it.
+
+### The audit
+
+Console (dashboard, products, orders, admin) and storefront. Findings, all measured:
+
+| # | Finding | Severity |
+|---|---|---|
+| 1 | Every `Input` was ~204px regardless of container (`w-auto` in the shared component) | High |
+| 2 | `* { border-color }` had never applied; every border was `currentColor` | High |
+| 3 | `--primary` was shadcn's stock violet, leaking into toggles, checkboxes, rings | High |
+| 4 | An account with no shop saw "Visit your shop" → `/preview/` (empty slug) and "Followers: 0" | High |
+| 5 | `--muted-foreground` was 4.34:1 on the sidebar — under the WCAG threshold | Medium |
+| 6 | `--warning` was 3.6:1 on paper — unreadable | Medium |
+| 7 | Four different radii in one chrome (12/10/8/4) | Low |
+| 8 | Sidebar 336px wide for 11 items | Low |
+| 9 | Chart series was a terracotta/teal pair from the reference project | Low |
+| 10 | Emerald/amber/red/blue Tailwind colours competed with the palette's own semantic tokens | Low |
+| 11 | Dashboard header says "Dashboard", page says "Platform" | Low |
+
+**Not fixed, reported instead:** *Low Stock* takes ~10 seconds to render. The endpoint returns
+**1,001 rows**, and the card sorts all of them client-side to show six. This is a data/API design
+problem, not a styling one, and quietly reshaping the endpoint was out of scope for a theme pass.
+
+### Two bugs that were invisible until the palette changed
+
+**`Input` defaulted to `w-auto`.** Stock shadcn is `w-full`. With `w-auto` an input falls back to the
+browser's intrinsic width of roughly twenty characters — measured at **204px, inside a 726px form**.
+The symptom was a products search field whose placeholder read "Search products by narr". Every
+input in both apps without an explicit width was affected; most just looked cramped rather than
+obviously broken.
+
+**The border-colour rule never ran.** `packages/ui/src/styles.css` has carried
+`* { border-color: hsl(var(--border)) }` since the kit was ported. That file is imported from
+JavaScript *before* each app's Tailwind entry, so preflight — which sets
+`border-color: currentColor` — is emitted afterwards and wins. Base-layer rules resolve by source
+order, not specificity. It was invisible while the palette was near-black on white; on warm paper
+every card drew its outline in espresso ink, which is why the dashboard appeared to have two borders
+per card. Fixed in each app's entry CSS, after `@import 'tailwindcss'`, with the reason written down
+so it does not get "tidied" back into the shared file.
+
+### The references
+
+**web.mydukaan.io is a login wall.** The seller dashboard is behind auth, so there is no product UI
+to study. What was extractable, and used: a centred white auth card, one primary action, an "or
+continue with" divider, a full-bleed brand background, Inter, `0.5rem` radius, cool-grey muted
+tokens. No claim is made to have reverse-engineered a dashboard that was never visible.
+
+**shop.com**, measured in the browser rather than eyeballed:
+
+```
+page      #FBFBFB         cards     #FFFFFF, radius 24–36px
+ink       #000000         chips     pill (9999px)
+display   ~64px, tight    surfaces  rgba(0,0,0,0.04)
+accent    one vivid hue   rail      floating vertical icon nav
+```
+
+Extracted as *patterns* — layout, spacing, type scale, colour roles. No markup, CSS or assets copied,
+and GT Standard is proprietary so it is not used.
+
+### The palette
+
+One file, because colour already had exactly one home: `packages/ui/src/styles.css`.
+
+| Token | Value | Hex |
+|---|---|---|
+| `--background` | `33 47% 97%` | `#FBF7F2` warm paper |
+| `--foreground` | `27 33% 11%` | `#241A12` espresso ink |
+| `--card` | `0 0% 100%` | `#FFFFFF` |
+| `--primary` | `19 31% 36%` | `#7A5240` coffee |
+| `--secondary` / `--muted` / `--accent` | `33 43% 92%` | `#F3EBE1` latte |
+| `--muted-foreground` | `29 15% 38%` | `#6F6052` |
+| `--border` | `33 33% 86%` | `#E7DCCF` |
+| `--success` | `134 26% 36%` | sage |
+| `--warning` | `32 72% 30%` | `#845214` |
+| `--destructive` | `11 57% 42%` | `#A8452F` brick |
+| `--radius` | `0.625rem` | 10px |
+
+Three decisions worth keeping:
+
+- **`--accent` stays a surface.** In shadcn it is the dropdown/menu hover background. Making it the
+  caramel would have turned every hover into a highlight and flattened the hierarchy.
+- **`--ring` tracks `--primary`.** The focus ring is where the accent has to be unmistakable.
+- **Semantic colours are warm.** Stock `142 71% 45%` green is a neon on coffee, and made an ordinary
+  "in stock" badge shout louder than the price beside it.
+
+Dark mode was rebuilt warm too, so nothing goes violet if it is ever enabled.
+
+### `check-contrast.mjs` — because "the UI check passes" meant nothing
+
+`check-ui.mjs` contains a relative-luminance helper and a `>= 4.5` comparison, and **never calls
+either**. It walks the live DOM, resolves each text element against its nearest opaque ancestor
+background, and applies WCAG thresholds (4.5:1 body, 3:1 large). It found what looking could not:
+
+```
+before  --muted-foreground on the latte sidebar   4.34:1   (needs 4.5)
+        --warning on paper                        3.6:1    (needs 4.5)
+after   CONTRAST OK  —  all six pages
+```
+
+Its stated limit: it cannot see a background painted by a pseudo-element or gradient.
+
+### Verification
+
+```
+typecheck      10/10 packages
+build          12/12 tasks
+phase6         ALL PAGES OK
+phase7         PHASE 7 UI OK
+phase8         PHASE 8 UI OK
+phase85        PHASE 8.5 UI OK
+contrast       CONTRAST OK
+check-ui       1 page failing — the pre-existing unreachable vecteezy.com image
+```
+
+Backend untouched this round; it was last green at 6,085 tests.
+
+**One self-inflicted incident, recorded because it is instructive:** running `turbo build` while the
+Next dev server was live overwrote `.next` underneath it, and the storefront began serving unstyled
+HTML — visible as default-blue links on black, and as a registration link with no PKCE parameters.
+The checks caught it immediately (phase85 went from OK to 5 failures, contrast to 65). Restarting
+the dev server with a clean `.next` resolved it. Do not run a production build against a live dev
+server in this repo.
+
+### Still to do
+
+- **The storefront's shop.com layout rebuild.** Only the *palette* has changed there. The airy
+  structure — 28px cards, pill chips, large tight display type, floating rail — is next, plus the
+  empty right half of the hero and the stuck grey skeleton in the header.
+- **Low Stock** returning 1,001 rows to display six.
+- **Inter.** Dukaan uses it; this machine does not have it installed and the project has no webfont
+  pipeline. Adding a network font was not done silently.
+
+---
+
+## Appendix AL — the customer site rebuilt in shop.com's language
+
+Appendix AK restyled the console and stopped at the storefront, which had only received the coffee
+palette. This is the structural rebuild: the chrome, the landing page, the gallery, the shop
+storefront sections, and one page that had been missing since Phase 5.
+
+### What was taken from the reference, and what was not
+
+Structure only. A floating translucent bar instead of a full-width rule with a hairline; display
+type at roughly 0.95–1.0 line height with negative tracking; large card radii; pill controls
+throughout; a wide vertical rhythm. No markup, no CSS, no assets, and no GT Standard — the font is
+proprietary and is not used. The accent stays coffee, not shop.com's vivid one, because this is one
+brand across two apps (the decision taken in AK).
+
+### The header was telling visitors the site was broken
+
+The account area rendered a grey placeholder pill until `initAuth()` resolved. That was written to
+avoid a flash of "Sign in" for a signed-in customer. Measured, cold:
+
+```
+landing, fresh browser context   6022 ms
+/shops, same context (warm)      3514 ms
+```
+
+An empty rounded pill for six seconds in the most prominent corner of the page is indistinguishable
+from a broken control. It now shows **"Sign in" immediately** and swaps to the account chip when the
+session resolves. Most visitors to a public storefront are signed out, so the default is usually the
+truth; for the minority it is a momentary and far smaller lie than a blank button. Same height
+either way, so nothing reflows.
+
+The cause of the latency is the silent SSO check against a remote Keycloak. `adapter.ts` carried a
+doc comment headed **"No silent SSO check, deliberately"** that had stopped being true when
+`silent-check-sso.html` landed in both apps — it described a promise that never settles. Corrected
+to describe what the code does, and to record the measured cost so the next person does not rebuild
+the same skeleton.
+
+### The landing page had an empty half
+
+The hero reserved a right-hand column and left it blank, which reads as a failed image rather than
+as whitespace. It now shows **real shops** — name, type, link — fetched from the same endpoint the
+gallery uses, plus a shop-type count. With no shops it says so and offers the way in. Nothing is
+invented to fill the space.
+
+The display line is `Your neighbourhood, / online.` with the accent on the second line. At the
+original `lg:text-7xl` it wrapped to three lines with "Your" orphaned, so it is now
+`lg:text-6xl` with `text-balance` and a slightly wider text column — two lines, deliberately.
+
+The four strings `check-phase85.mjs` asserts were kept: *Your neighbourhood*, *Buying something?*,
+*Running a shop?*, *Browse shops*, and an `/shops` anchor.
+
+### The gallery filters did not filter
+
+Two defects, both invisible in a screenshot:
+
+- every category chip linked to **`/?type=…`** — the landing page, carrying a parameter nothing read
+- the page **never passed `type` to the API**, which had supported filtering since it was written
+
+A control that looks like a filter and silently shows everything is worse than no control: the
+customer concludes there is nothing of that kind rather than that the chip is broken. Chips now
+point at `/shops?type=…`, the value reaches the query, an unknown code is ignored rather than
+becoming a 400 that renders as "no shops", and the list has pagination. The empty state no longer
+refers to "before Phase 1".
+
+Verified by clicking, not by reading an `href`:
+
+```
+gallery: all=1 -> pharmacy=0 | url has type=PHARMACY | active="Pharmacy"
+gallery bogus type: HTTP 200 | shops shown=1
+```
+
+### `/search` did not exist
+
+The header has linked to `/search` since the shell was written. It returned **404**. Meanwhile
+`PublicSearchController` had been serving `/api/v1/p/search` since Phase 5 — shops that stock a term,
+then the products. The page was the missing half, so it is built:
+
+- a plain `<form method="get">`; the URL is the state, and search works before hydration
+- shops first, then products, following the API's own reasoning about what a query means
+- the API's `hint` is shown when a query is too short for the trigram index, instead of "no results"
+- shop-type chips, result count, pagination
+
+```
+q=""              start-with-a-word      q="coffee"   25 cards, "100 results", 5 pages
+q="a"             start-with-a-word      q="zzzz…"    no-match
+```
+
+### The shop storefront's own chrome
+
+Sections are shop-composed (theme engine), so these are the platform's section implementations
+restyled, not the shop's choices overridden:
+
+- **site header** — a pill matching the platform bar, logo and name, pill menu, and a real search
+  link. It was a full-width strip with a hairline directly beneath another header, and its "Search"
+  was a `<span>`: it looked like a control, could not be clicked, and had no destination. Its sticky
+  offset is `top-[4.5rem]`, because two elements pinned to `top: 0` do not stack — the shop header
+  would slide under the platform bar exactly when a customer scrolled to use it.
+- **site footer** — a rounded card, columns, payment badges.
+- **hero / product cards / promo / gallery / image-with-text** — larger display type, `rounded-2xl`
+  and `rounded-[1.5rem]` surfaces, hover elevation.
+
+### The broken-image glyph, twice
+
+Every section rendered a bare `<img>` with no error path. `SafeImage` was added, and the first
+version still left the broken glyph on screen. The reason is the interesting part: the server emits
+`<img>`, the browser starts fetching while parsing, and a URL that fails *immediately* errors
+**before React hydrates and attaches `onError`** — so the handler never fires. The mount effect now
+re-checks the element, because a *complete* image with zero natural width has already failed whether
+or not anybody was listening.
+
+Why the URL failed is worth recording, because the obvious diagnosis was wrong. `curl` returns
+**200** with a JPEG body. Chrome returns `net::ERR_BLOCKED_BY_ORB`. Two other external hosts load
+fine in the same browser, so this is the CDN refusing a real browser, not the network. That image
+could never have rendered for any customer.
+
+### Fonts: a theme naming "Inter" was rendering in Times
+
+`--font-heading: Inter` was emitted verbatim and consumed as `font-family: var(--font-heading,
+inherit)`. A font list with no installed match and no generic fallback does not inherit or degrade
+to the system sans — the browser drops to its default, a serif on Chrome. Every seeded template
+names Inter, and Inter is installed on almost no machine, so a brand-new shop's headings were
+**serif**: a shop that chose Inter was served the opposite of its choice, with nothing reporting a
+problem. Font tokens now always carry a generic stack unless the owner pasted one.
+
+```
+--font-heading: "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif
+```
+
+### A published template was telling customers to use the editor
+
+The seeded general template's `image-with-text` body was *"Tell your customers what makes your shop
+worth choosing. Replace this section from the appearance editor."* — an instruction addressed to
+the owner, rendered verbatim on a live storefront. The seeder now carries real customer-facing copy,
+and the general template starts on the coffee palette rather than Tailwind green.
+
+### Data repaired in the development database (disclosed, because the check went green)
+
+Three edits, all to the demo shop's own rows, none of them invented content:
+
+| Row | Before | After | Why |
+|---|---|---|---|
+| `shop_theme` (published) | two `imageUrl`s → vecteezy | `""` | the host refuses browsers; no customer could ever see it |
+| `shop_theme` (published) | operator instruction as body copy | customer copy | stale seed, now fixed at source |
+| `shop_theme` (published) | `about`: `ucuyajhauyajhajhjhabjajhajchaubajhyaauckjcahgch` | `""` | keyboard-mash a tester left in the editor; cleared rather than invented |
+
+`check-ui.mjs` had been red for one page on the first of these, and the failure was attributed in AK
+to "an unreachable vecteezy.com image". The attribution was half right: the image *is* unreachable
+to a browser, but the host answers `curl` with 200, which is why it read as environmental for so
+long.
+
+### Verification
+
+```
+typecheck      10/10 packages
+next build     success — 12 routes; /search and /shops dynamic, / static
+phase6         ALL PAGES OK
+phase7         PHASE 7 UI OK
+phase8         PHASE 8 UI OK
+phase85        PHASE 8.5 UI OK
+contrast       CONTRAST OK   (now includes /search with a live result set)
+check-ui       ALL PAGES OK  (first green run; was 1 page failing)
+backend        6085 tests, 0 failures, 0 errors, 0 skipped
+mobile         390×844 — 0px horizontal overflow on landing, gallery and search
+```
+
+The production build was run with the dev server stopped, and the dev server was restarted on a
+clean `.next` afterwards, per the incident recorded in AK.
+
+### Still to do
+
+- **Low Stock** still fetches 1,001 rows to display six.
+- **`CampaignService.effectOf`** is still not wired into `QuoteService`, so campaigns do not move
+  prices.
+- **Tax reports** — per-period filing comparison.
+- **Pickup selection at checkout**, not only after placement.
+- **Inter** — self-host it or commit to the system stack. The fallback now makes the current
+  behaviour honest either way.
+- **The shop page's own background** is the platform's paper while the shop's `background` token
+  frames only the sections. Coherent today; worth revisiting if a shop picks a strong background.

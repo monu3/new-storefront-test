@@ -101,7 +101,7 @@ export function ShopSettingsPage({ auth }: { auth: AuthAdapter }) {
                         className={cn(
                           'flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-left text-sm transition-colors',
                           active
-                            ? 'bg-neutral-900 font-medium text-white'
+                            ? 'bg-primary font-medium text-primary-foreground'
                             : 'text-muted-foreground hover:bg-muted hover:text-foreground',
                         )}
                       >
@@ -247,7 +247,7 @@ function SectionForm<T extends object>({
             {save.isPending ? 'Saving…' : 'Save changes'}
           </Button>
           {!dirty && saved ? (
-            <span className="flex items-center gap-1 text-sm text-emerald-600">
+            <span className="flex items-center gap-1 text-sm text-success">
               <Check className="size-4" aria-hidden /> Saved
             </span>
           ) : null}
@@ -255,7 +255,7 @@ function SectionForm<T extends object>({
             <span className="text-sm text-muted-foreground">No changes yet</span>
           ) : null}
           {error ? (
-            <span role="alert" className="text-sm text-red-600">
+            <span role="alert" className="text-sm text-destructive">
               {error}
             </span>
           ) : null}
@@ -873,7 +873,7 @@ function PaymentsTab({ auth }: { auth: AuthAdapter }) {
           {!data.secretsAvailable ? (
             <div
               role="status"
-              className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800"
+              className="rounded-lg border border-amber-200 bg-warning/10 p-3 text-sm text-foreground"
             >
               <p className="font-medium">Secrets cannot be stored on this server.</p>
               <p className="mt-1">
@@ -964,7 +964,7 @@ function PaymentMethodCard({
           <CardTitle className="flex items-center gap-2">
             {method.customerLabel}
             {method.enabled ? (
-              <Badge className="bg-emerald-50 text-emerald-700">On</Badge>
+              <Badge className="bg-success/10 text-success">On</Badge>
             ) : (
               <Badge variant="secondary">Off</Badge>
             )}
@@ -1128,12 +1128,12 @@ function PaymentMethodCard({
             {save.isPending ? 'Saving…' : 'Save changes'}
           </Button>
           {saved && !dirty ? (
-            <span className="flex items-center gap-1 text-sm text-emerald-600">
+            <span className="flex items-center gap-1 text-sm text-success">
               <Check className="size-4" aria-hidden /> Saved
             </span>
           ) : null}
           {error ? (
-            <span role="alert" className="text-sm text-red-600">
+            <span role="alert" className="text-sm text-destructive">
               {error}
             </span>
           ) : null}
@@ -1195,7 +1195,7 @@ function SecretField({
             <button
               type="button"
               onClick={onRequestClear}
-              className="text-xs text-red-600 underline underline-offset-2"
+              className="text-xs text-destructive underline underline-offset-2"
             >
               Forget it
             </button>
@@ -1215,7 +1215,7 @@ function SecretField({
           ) : null}
         </div>
         {disabled ? (
-          <p className="text-xs text-amber-700">
+          <p className="text-xs text-warning">
             Disabled: this server is not configured to store secrets.
           </p>
         ) : null}

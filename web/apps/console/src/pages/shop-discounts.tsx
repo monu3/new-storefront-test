@@ -193,10 +193,10 @@ export function ShopDiscounts({ auth }: { auth: AuthAdapter }) {
           {!d.active ? (
             <Badge variant="secondary">Paused</Badge>
           ) : d.usableNow ? (
-            <Badge className="bg-emerald-50 text-emerald-700">Working</Badge>
+            <Badge className="bg-success/10 text-success">Working</Badge>
           ) : (
             <div>
-              <Badge className="bg-amber-50 text-amber-700">Not usable</Badge>
+              <Badge className="bg-warning/10 text-warning">Not usable</Badge>
               {d.notUsableReason ? (
                 <p className="mt-0.5 max-w-40 text-xs text-muted-foreground">
                   {d.notUsableReason}
@@ -390,7 +390,7 @@ function DiscountDialog({
                     className={cn(
                       'flex flex-col items-start gap-1 rounded-lg border p-3 text-left text-xs transition-colors',
                       active
-                        ? 'border-emerald-600 bg-emerald-50 text-emerald-900'
+                        ? 'border-emerald-600 bg-success/10 text-emerald-900'
                         : 'hover:bg-muted',
                     )}
                   >
@@ -549,7 +549,7 @@ function DiscountDialog({
           </div>
 
           {error ? (
-            <p role="alert" className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">
+            <p role="alert" className="rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">
               {error}
             </p>
           ) : null}

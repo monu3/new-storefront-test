@@ -148,7 +148,7 @@ export function ShopProducts({ auth }: { auth: AuthAdapter }) {
       {
         key: 'stock',
         header: 'Stock',
-        className: 'whitespace-nowrap font-medium text-emerald-700',
+        className: 'whitespace-nowrap font-medium text-success',
         render: (row: ProductRow) => row.stock.toLocaleString(),
       },
       {
@@ -165,7 +165,7 @@ export function ShopProducts({ auth }: { auth: AuthAdapter }) {
               // not as an unvalidated toggle in a table.
               disabled
             />
-            <span className={cn(row.status === 'ACTIVE' ? 'text-emerald-600' : 'text-muted-foreground')}>
+            <span className={cn(row.status === 'ACTIVE' ? 'text-success' : 'text-muted-foreground')}>
               {row.status === 'ACTIVE' ? 'Active' : row.status === 'DRAFT' ? 'Draft' : 'Archived'}
             </span>
           </span>
@@ -253,7 +253,7 @@ export function ShopProducts({ auth }: { auth: AuthAdapter }) {
 
         <a
           href="/shop/products/new"
-          className="inline-flex h-9 items-center gap-2 rounded-md bg-neutral-900 px-4 text-sm font-medium text-white transition-colors hover:bg-neutral-800"
+          className="inline-flex h-9 items-center gap-2 rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90"
         >
           <Plus className="size-4" aria-hidden />
           Add new product

@@ -286,7 +286,7 @@ export function AdminSupport({ auth }: { auth: AuthAdapter }) {
 
                     <span className="flex shrink-0 items-center gap-1.5">
                       {entry.attempts > 1 ? (
-                        <Badge variant="secondary" className="bg-amber-100 text-amber-800 text-[10px]">
+                        <Badge variant="secondary" className="bg-amber-100 text-foreground text-[10px]">
                           {entry.attempts} attempts
                         </Badge>
                       ) : null}
@@ -382,7 +382,7 @@ function StatusPill({ status }: { status: string }) {
       ? 'bg-emerald-100 text-emerald-800'
       : status === 'FAILED'
         ? 'bg-red-100 text-red-800'
-        : 'bg-amber-100 text-amber-800';
+        : 'bg-amber-100 text-foreground';
 
   return (
     <Badge variant="secondary" className={className}>
@@ -403,7 +403,7 @@ function Tile({
   tone?: 'plain' | 'warn';
 }) {
   return (
-    <Card className={cn(tone === 'warn' && 'border-amber-300 bg-amber-50/40')}>
+    <Card className={cn(tone === 'warn' && 'border-warning/40 bg-warning/10/40')}>
       <CardContent className="p-3">
         <p className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
           {label}

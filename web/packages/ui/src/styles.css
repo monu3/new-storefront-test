@@ -25,50 +25,79 @@
  */
 
 @layer base {
+  /**
+   * **Light coffee — the platform palette.**
+   *
+   * Every colour in both frontends resolves through these eighteen values, so this block is the
+   * whole theme rather than a starting point for one. That mattered more than it sounds: the
+   * previous values were shadcn's stock violet (`--primary: 262 83% 58%`), and violet leaked into
+   * every control that had never been given a colour of its own — toggle switches, row checkboxes,
+   * focus rings — which is why the product looked like a component library rather than a shop.
+   *
+   * The palette is warm paper under espresso ink, with coffee as the single accent. Hues sit
+   * between 19° and 33° so that cards, borders, muted surfaces and the primary all belong to the
+   * same family; nothing is neutral grey, and the result reads as warm without becoming a colour
+   * scheme people have to think about.
+   *
+   * Deliberate choices worth keeping:
+   *
+   * - `--accent` stays a *surface*, not the caramel. In shadcn, `accent` is the dropdown and menu
+   *   hover background. Making it a saturated colour would have turned every hover state into a
+   *   highlight and destroyed the hierarchy.
+   * - `--ring` tracks `--primary`. The focus ring is the one place the accent must be unmistakable.
+   * - `--success`, `--warning` and `--destructive` are muted to sit on warm paper. The stock
+   *   `142 71% 45%` green is a neon on a coffee background and makes an ordinary "in stock" badge
+   *   shout louder than the price next to it.
+   * - Radius is 10px (was 12px). The console had four different radii in one chrome — 12, 10, 8
+   *   and 4 — because components were tuned one at a time. One value, and `lg/md/sm` derive from it.
+   */
   :root {
-    --background: 0 0% 100%;
-    --foreground: 240 10% 4%;
-    --card: 0 0% 100%;
-    --card-foreground: 240 10% 4%;
+    --background: 33 47% 97%;        /* #FBF7F2  warm paper */
+    --foreground: 27 33% 11%;        /* #241A12  espresso ink */
+    --card: 0 0% 100%;               /* #FFFFFF  cards stay white, so they lift off the paper */
+    --card-foreground: 27 33% 11%;
     --popover: 0 0% 100%;
-    --popover-foreground: 240 10% 4%;
-    --primary: 262 83% 58%;
+    --popover-foreground: 27 33% 11%;
+    --primary: 19 31% 36%;           /* #7A5240  coffee */
     --primary-foreground: 0 0% 100%;
-    --secondary: 240 5% 96%;
-    --secondary-foreground: 240 6% 10%;
-    --muted: 240 5% 96%;
-    --muted-foreground: 240 4% 46%;
-    --accent: 240 5% 96%;
-    --accent-foreground: 240 6% 10%;
-    --destructive: 0 72% 51%;
+    --secondary: 33 43% 92%;         /* #F3EBE1  latte */
+    --secondary-foreground: 25 16% 18%;
+    --muted: 33 43% 92%;
+    --muted-foreground: 29 15% 38%;  /* #6F6052 — measured, not guessed: the previous 42% was
+                                       4.34:1 against the latte sidebar, just under the 4.5 threshold */
+    --accent: 33 43% 92%;            /* hover surface, deliberately not saturated */
+    --accent-foreground: 25 16% 18%;
+    --destructive: 11 57% 42%;       /* #A8452F  brick, not fire-engine red */
     --destructive-foreground: 0 0% 100%;
-    --success: 142 71% 45%;
-    --warning: 38 92% 50%;
-    --border: 240 6% 90%;
-    --input: 240 6% 90%;
-    --ring: 262 83% 58%;
-    --radius: 0.75rem;
+    --success: 134 26% 36%;          /* sage — 5.0:1 on paper */
+    --warning: 32 72% 30%;           /* #845214 — the previous amber was 3.6:1, unreadable */
+    --border: 33 33% 86%;            /* #E7DCCF */
+    --input: 33 33% 86%;
+    --ring: 19 31% 36%;
+    --radius: 0.625rem;
   }
   .dark {
-    --background: 240 10% 4%;
-    --foreground: 0 0% 98%;
-    --card: 240 10% 6%;
-    --card-foreground: 0 0% 98%;
-    --popover: 240 10% 6%;
-    --popover-foreground: 0 0% 98%;
-    --primary: 263 70% 65%;
-    --primary-foreground: 240 10% 4%;
-    --secondary: 240 4% 16%;
-    --secondary-foreground: 0 0% 98%;
-    --muted: 240 4% 16%;
-    --muted-foreground: 240 5% 65%;
-    --accent: 240 4% 16%;
-    --accent-foreground: 0 0% 98%;
-    --destructive: 0 63% 50%;
-    --destructive-foreground: 0 0% 98%;
-    --border: 240 4% 16%;
-    --input: 240 4% 16%;
-    --ring: 263 70% 65%;
+    --background: 27 33% 7%;
+    --foreground: 32 8% 93%;
+    --card: 30 31% 9%;
+    --card-foreground: 32 8% 93%;
+    --popover: 30 31% 9%;
+    --popover-foreground: 32 8% 93%;
+    --primary: 31 41% 63%;           /* caramel reads as "coffee" against dark, where #7A5240 vanishes */
+    --primary-foreground: 27 33% 11%;
+    --secondary: 28 26% 13%;
+    --secondary-foreground: 32 8% 93%;
+    --muted: 28 26% 13%;
+    --muted-foreground: 29 17% 64%;
+    --accent: 29 26% 16%;
+    --accent-foreground: 32 8% 93%;
+    --destructive: 12 53% 50%;
+    --destructive-foreground: 32 8% 93%;
+    --success: 134 23% 54%;
+    --warning: 37 61% 55%;
+    --border: 29 13% 19%;
+    --input: 29 13% 19%;
+    --ring: 31 41% 63%;
   }
   * {
     border-color: hsl(var(--border));

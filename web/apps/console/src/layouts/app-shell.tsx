@@ -19,6 +19,7 @@ import {
   Percent,
   ScrollText,
   Settings,
+  ShieldCheck,
   ShoppingBag,
   Sparkles,
   Store,
@@ -176,35 +177,47 @@ export function AppShell({ auth }: { auth: AuthAdapter }) {
   const path = location.pathname;
 
   return (
-    <div className="flex min-h-dvh bg-muted/40">
+    <div className="flex min-h-dvh bg-background">
       {/* ------------------------------------------------------------ sidebar */}
-      <aside className="flex w-[336px] shrink-0 flex-col bg-[#0d0d0d] text-neutral-300">
-        <div className="p-4">
-          <div className="flex items-center gap-3 rounded-xl bg-[#1c1c1c] p-3 ring-1 ring-white/10">
+      <aside className="flex w-[264px] shrink-0 flex-col border-r border-border bg-secondary text-foreground">
+        <div className="p-3">
+          <div className="flex items-center gap-3 rounded-lg border border-border bg-card p-3">
             <div className="relative">
-              <Avatar className="size-11 bg-white text-neutral-900">
-                <Store className="size-5" aria-hidden />
+              <Avatar className="size-10 bg-primary text-primary-foreground">
+                {ownsShop ? <Store className="size-5" aria-hidden /> : <ShieldCheck className="size-5" aria-hidden />}
               </Avatar>
-              {/* Verified marker, mirroring the reference's green status dot. */}
-              <span
-                className={cn(
-                  'absolute -bottom-0.5 -right-0.5 size-3.5 rounded-full ring-2 ring-[#1c1c1c]',
-                  stats?.verified ? 'bg-emerald-500' : 'bg-amber-500',
-                )}
-                title={stats?.verified ? 'Verified shop' : 'Not verified yet'}
-              />
+              {/*
+                The verified dot describes a *shop*. An account without one has no verification
+                state to report, and drawing an amber "not verified yet" dot against a platform
+                operator says something untrue about them.
+              */}
+              {ownsShop ? (
+                <span
+                  className={cn(
+                    'absolute -bottom-0.5 -right-0.5 size-3.5 rounded-full ring-2 ring-card',
+                    stats?.verified ? 'bg-success/100' : 'bg-warning/100',
+                  )}
+                  title={stats?.verified ? 'Verified shop' : 'Not verified yet'}
+                />
+              ) : null}
             </div>
             <div className="min-w-0 flex-1">
-              <p className="truncate text-sm font-semibold text-white">
-                {stats?.shopName ?? user.session.fullName ?? 'Your shop'}
+              <p className="truncate text-sm font-semibold text-foreground">
+                {/* The shop's name belongs here only if there is a shop. Falling back to the
+                    person's own name made an operator's sidebar look like an unconfigured shop. */}
+                {ownsShop ? (stats?.shopName ?? 'Your shop') : (user.session.fullName ?? 'Platform operator')}
               </p>
-              <Link
-                to={`/preview/${stats?.shopSlug ?? ''}`}
-                className="mt-0.5 inline-flex items-center gap-1 text-xs text-neutral-400 hover:text-neutral-200"
-              >
-                Visit your shop
-                <ChevronRight className="size-3" aria-hidden />
-              </Link>
+              {ownsShop ? (
+                <Link
+                  to={`/preview/${stats?.shopSlug ?? ''}`}
+                  className="mt-0.5 inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
+                >
+                  Visit your shop
+                  <ChevronRight className="size-3" aria-hidden />
+                </Link>
+              ) : (
+                <p className="mt-0.5 text-xs text-muted-foreground">Platform operator</p>
+              )}
             </div>
           </div>
         </div>
@@ -222,11 +235,11 @@ export function AppShell({ auth }: { auth: AuthAdapter }) {
         </nav>
 
         <div className="p-3">
-          <div className="flex items-center gap-3 rounded-lg px-3 py-3 hover:bg-white/5">
-            <Sparkles className="size-5 shrink-0 text-neutral-400" aria-hidden />
+          <div className="flex items-center gap-3 rounded-lg px-3 py-3 hover:bg-card">
+            <Sparkles className="size-5 shrink-0 text-muted-foreground" aria-hidden />
             <div className="min-w-0">
-              <p className="text-sm font-medium text-white">Upgrade plan</p>
-              <p className="text-xs text-neutral-500">Get extra benefits</p>
+              <p className="text-sm font-medium text-foreground">Upgrade plan</p>
+              <p className="text-xs text-muted-foreground">Get extra benefits</p>
             </div>
           </div>
         </div>
@@ -237,13 +250,20 @@ export function AppShell({ auth }: { auth: AuthAdapter }) {
         <header className="flex h-[72px] shrink-0 items-center justify-between gap-4 border-b bg-background px-6">
           <PageTitle pathname={path} />
           <div className="flex items-center gap-2">
-            <Link
-              to="/shop/audience"
-              className="mr-2 inline-flex items-center gap-2 rounded-lg bg-neutral-900 px-3 py-2 text-sm text-white hover:bg-neutral-800"
-            >
-              <Users className="size-4" aria-hidden />
-              Followers: {stats?.followers ?? 0}
-            </Link>
+            {/*
+              Only for a real shop. An operator who owns none was being shown "Followers: 0", which
+              reads as a shop with no audience rather than as an account with no shop — and it was
+              a link into a shop screen they cannot use.
+            */}
+            {ownsShop ? (
+              <Link
+                to="/shop/audience"
+                className="mr-2 inline-flex items-center gap-2 rounded-lg bg-primary px-3 py-2 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90"
+              >
+                <Users className="size-4" aria-hidden />
+                Followers: {stats?.followers ?? 0}
+              </Link>
+            ) : null}
 
             <div className="relative">
               <button
@@ -294,14 +314,14 @@ export function AppShell({ auth }: { auth: AuthAdapter }) {
                 aria-expanded={profileOpen}
                 className="rounded-full ring-offset-2 focus-visible:ring-2 focus-visible:ring-ring"
               >
-                <Avatar className="size-9 bg-neutral-900 text-white">
+                <Avatar className="size-9 bg-primary text-primary-foreground">
                   <Store className="size-4" aria-hidden />
                 </Avatar>
               </button>
               {profileOpen ? (
                 <Menu onClose={() => setProfileOpen(false)} className="absolute right-0 top-full z-30 mt-1 w-72">
                   <div className="flex items-center gap-3 px-3 py-3">
-                    <Avatar className="size-10 bg-blue-100 text-blue-900">
+                    <Avatar className="size-10 bg-secondary text-foreground">
                       <Store className="size-4" aria-hidden />
                     </Avatar>
                     <div className="min-w-0">
@@ -332,7 +352,7 @@ export function AppShell({ auth }: { auth: AuthAdapter }) {
                     }}
                   >
                     <span className="flex items-center gap-2">
-                      <span className="grid size-7 place-items-center rounded-md bg-red-50 text-red-600">
+                      <span className="grid size-7 place-items-center rounded-md bg-destructive/10 text-destructive">
                         <LogOut className="size-4" aria-hidden />
                       </span>
                       Sign Out
@@ -372,8 +392,8 @@ function NavLink({
       className={cn(
         'flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm transition-colors',
         active
-          ? 'bg-[#2a2a2a] font-medium text-white'
-          : 'text-neutral-400 hover:bg-white/5 hover:text-neutral-200',
+          ? 'bg-card font-medium text-foreground shadow-sm ring-1 ring-border'
+          : 'text-muted-foreground hover:bg-card hover:text-foreground',
       )}
     >
       <Icon className="size-5 shrink-0" aria-hidden />
@@ -427,7 +447,7 @@ function MenuItem({
       onClick={onClick}
       className={cn(
         'flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm hover:bg-muted',
-        danger && 'text-red-600',
+        danger && 'text-destructive',
       )}
     >
       {children}

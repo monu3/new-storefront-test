@@ -345,7 +345,7 @@ export function AdminDashboard({ auth }: { auth: AuthAdapter }) {
                     {shop.shopId.slice(0, 8)}
                   </span>
                   {shop.featured ? (
-                    <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[10px] text-amber-800">
+                    <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[10px] text-foreground">
                       Featured
                     </span>
                   ) : null}
@@ -409,7 +409,7 @@ function Stat({
   tone?: 'plain' | 'warn';
 }) {
   return (
-    <Card className={cn(tone === 'warn' && 'border-amber-300 bg-amber-50/40')}>
+    <Card className={cn(tone === 'warn' && 'border-warning/40 bg-warning/10/40')}>
       <CardContent className="p-4">
         <p className="flex items-center gap-1.5 text-xs font-medium uppercase tracking-wide text-muted-foreground">
           {icon}

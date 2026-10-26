@@ -65,3 +65,29 @@
   0%, 70%, 100% { opacity: 30%; }
   20%, 50%      { opacity: 50%; }
 }
+
+/* ============================================================================
+ * Border colour, in the layer that actually wins.
+ *
+ * `packages/ui/src/styles.css` has carried `* { border-color: hsl(var(--border)) }` since the kit
+ * was ported, and it has never once applied. That file is imported from JavaScript *before* each
+ * app's Tailwind entry, so Tailwind's preflight — which sets `border-color: currentColor` — is
+ * emitted afterwards and overrides it. Base-layer rules resolve by source order, so "later" beats
+ * "more specific selector" here.
+ *
+ * The consequence was invisible while the palette was near-black on white: `currentColor` happened
+ * to be close to the intended colour, so borders merely looked a little heavy. On warm paper it
+ * stopped being invisible — every card drew its outline in espresso ink, which is why the dashboard
+ * appeared to have two borders per card (the border, plus the visual weight of the ink against the
+ * cream background).
+ *
+ * Duplicated in both apps on purpose: this must be emitted after `@import 'tailwindcss'`, and each
+ * app owns its own Tailwind entry. A shared file cannot be guaranteed to load after preflight.
+ * ========================================================================= */
+@layer base {
+  *,
+  ::before,
+  ::after {
+    border-color: hsl(var(--border));
+  }
+}

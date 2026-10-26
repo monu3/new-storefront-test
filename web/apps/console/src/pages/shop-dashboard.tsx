@@ -28,8 +28,12 @@ import { AlertTriangle } from 'lucide-react';
  * real ones will price against them.
  */
 
-/** The reference's chart colours: terracotta and teal. */
-const SERIES = ['#d97757', '#3f9e8f'];
+/**
+ * Chart series, taken from the palette rather than from the reference project's terracotta and
+ * teal. Those two read as a different product sitting inside this one: the bar was the loudest
+ * thing on the dashboard and it was the only element not drawn from the coffee family.
+ */
+const SERIES = ['#7A5240', '#4E7C59'];
 
 export function ShopDashboard({ auth }: { auth: AuthAdapter }) {
   const { data, isLoading, error } = useQuery({
@@ -101,7 +105,7 @@ export function ShopDashboard({ auth }: { auth: AuthAdapter }) {
             <div className="mt-6 h-[320px]">
               <ResponsiveContainer width="100%" height="100%">
                 <BarChart data={data.revenueByMonth} margin={{ top: 4, right: 8, left: 0, bottom: 0 }}>
-                  <CartesianGrid strokeDasharray="4 4" stroke="#e5e7eb" vertical={false} />
+                  <CartesianGrid strokeDasharray="4 4" stroke="#E7DCCF" vertical={false} />
                   <XAxis dataKey="month" stroke="#9ca3af" fontSize={13} tickLine={false} axisLine={false} />
                   <YAxis
                     stroke="#9ca3af"
@@ -141,7 +145,7 @@ export function ShopDashboard({ auth }: { auth: AuthAdapter }) {
                     <stop offset="100%" stopColor={SERIES[0]} stopOpacity={0.02} />
                   </linearGradient>
                 </defs>
-                <CartesianGrid strokeDasharray="4 4" stroke="#e5e7eb" vertical={false} />
+                <CartesianGrid strokeDasharray="4 4" stroke="#E7DCCF" vertical={false} />
                 <XAxis dataKey="month" stroke="#9ca3af" fontSize={13} tickLine={false} axisLine={false} />
                 <YAxis stroke="#9ca3af" fontSize={13} tickLine={false} axisLine={false} width={40} />
                 <Tooltip formatter={(v: number) => [`${v} orders`, 'Sales']} />
@@ -220,8 +224,8 @@ function Trend({ changePct }: { changePct: number | null }) {
       <span
         className={
           up
-            ? 'rounded-md bg-neutral-900 px-2 py-1 font-medium text-white'
-            : 'rounded-md bg-red-50 px-2 py-1 font-medium text-red-700'
+            ? 'rounded-md bg-success/10 px-2 py-1 font-medium text-success'
+            : 'rounded-md bg-destructive/10 px-2 py-1 font-medium text-destructive'
         }
       >
         {up ? '↗' : '↘'} {up ? '+' : ''}
@@ -327,7 +331,7 @@ function LowStockCard({ auth }: { auth: AuthAdapter }) {
           {(data ?? []).length > 0 ? (
             <a
               href="/shop/stock"
-              className="shrink-0 text-sm text-blue-600 hover:underline"
+              className="shrink-0 text-sm text-primary hover:underline"
             >
               Manage stock
             </a>
@@ -360,9 +364,9 @@ function LowStockCard({ auth }: { auth: AuthAdapter }) {
                 <Badge
                   className={
                     row.available <= 0
-                      ? 'bg-red-50 text-red-700'
+                      ? 'bg-destructive/10 text-destructive'
                       : row.available <= row.lowStockThreshold
-                        ? 'bg-amber-50 text-amber-700'
+                        ? 'bg-warning/10 text-warning'
                         : 'bg-muted text-muted-foreground'
                   }
                 >

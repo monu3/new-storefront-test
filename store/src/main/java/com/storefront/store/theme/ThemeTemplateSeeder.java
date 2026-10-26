@@ -136,9 +136,9 @@ public class ThemeTemplateSeeder implements ApplicationRunner {
 				{
 				  "schemaVersion": 1,
 				  "tokens": {
-				    "primary": "#16a34a", "background": "#ffffff", "foreground": "#0f172a",
-				    "muted": "#f1f5f9", "accent": "#f97316", "border": "#e2e8f0", "ring": "#16a34a",
-				    "fontHeading": "Inter", "fontBody": "Inter", "radius": "0.5rem", "mode": "light"
+				    "primary": "#7a5240", "background": "#fbf7f2", "foreground": "#241a12",
+				    "muted": "#f3ebe1", "accent": "#c8a27a", "border": "#e7dccf", "ring": "#7a5240",
+				    "fontHeading": "Inter", "fontBody": "Inter", "radius": "1rem", "mode": "light"
 				  },
 				  "sections": [
 				    { "id": "announcement", "type": "announcement-bar",
@@ -154,7 +154,7 @@ public class ThemeTemplateSeeder implements ApplicationRunner {
 				      "props": { "heading": "Popular right now", "source": "featured", "limit": 8 } },
 				    { "id": "story", "type": "image-with-text",
 				      "props": { "heading": "Why shop with us",
-				                 "body": "Tell your customers what makes your shop worth choosing. Replace this section from the appearance editor.",
+				                 "body": "We are a shop on your street, not a warehouse on the other side of the world. Orders placed before four are packed the same day, and there is a person here who answers the phone.",
 				                 "imageUrl": "", "imagePosition": "left" } },
 				    { "id": "all-products", "type": "product-grid",
 				      "props": { "source": "latest", "limit": 8, "columns": 4 } },

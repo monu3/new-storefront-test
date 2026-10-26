@@ -24,20 +24,20 @@ import { describeGrant, featureLabel } from '../lib/entitlements';
  */
 export function UpgradePrompt({ denial }: { denial: EntitlementDenial }) {
   return (
-    <Card className="border-amber-300 bg-amber-50/50">
+    <Card className="border-warning/40 bg-warning/10">
       <CardContent className="space-y-3 p-4">
         <div className="flex items-start gap-2">
-          <Sparkles className="mt-0.5 size-4 shrink-0 text-amber-700" aria-hidden />
+          <Sparkles className="mt-0.5 size-4 shrink-0 text-warning" aria-hidden />
           <div className="min-w-0">
-            <p className="font-medium text-amber-900">
+            <p className="font-medium text-foreground">
               {featureLabel(denial.feature)} is not in your plan
             </p>
-            <p className="mt-0.5 text-sm text-amber-900">{denial.message}</p>
+            <p className="mt-0.5 text-sm text-foreground">{denial.message}</p>
           </div>
         </div>
 
         {denial.limit !== null ? (
-          <p className="text-sm text-amber-900">
+          <p className="text-sm text-foreground">
             You have {denial.currentCount?.toLocaleString('en-US') ?? '—'} of{' '}
             {denial.limit.toLocaleString('en-US')} {describeGrant(denial.feature, null).toLowerCase()}
             .
@@ -53,7 +53,7 @@ export function UpgradePrompt({ denial }: { denial: EntitlementDenial }) {
               </Link>
             </Button>
           ) : (
-            <p className="text-sm text-amber-800">
+            <p className="text-sm text-foreground">
               No plan currently offers this. Removing products you no longer sell will free up space.
             </p>
           )}

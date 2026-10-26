@@ -119,7 +119,7 @@ export function ShopOrderDetail({ auth }: { auth: AuthAdapter }) {
               variant="outline"
               className={cn(
                 'gap-1.5 px-3 py-1',
-                order.paymentStatus === 'PAID' ? 'border-emerald-200 bg-emerald-50 text-emerald-700' : '',
+                order.paymentStatus === 'PAID' ? 'border-emerald-200 bg-success/10 text-success' : '',
               )}
             >
               <CreditCard className="size-3.5" aria-hidden />
@@ -195,7 +195,7 @@ export function ShopOrderDetail({ auth }: { auth: AuthAdapter }) {
               <ol className="space-y-3">
                 {order.timeline.map((entry, index) => (
                   <li key={index} className="flex items-start gap-3">
-                    <span className="mt-0.5 grid size-6 shrink-0 place-items-center rounded-full bg-emerald-100 text-emerald-700">
+                    <span className="mt-0.5 grid size-6 shrink-0 place-items-center rounded-full bg-emerald-100 text-success">
                       <Check className="size-3.5" aria-hidden />
                     </span>
                     <div>
@@ -323,12 +323,12 @@ function OrderSkeleton() {
 // ---------------------------------------------------------------------- helpers
 
 const statusStyles: Record<string, string> = {
-  PENDING: 'bg-amber-50 text-amber-700',
+  PENDING: 'bg-warning/10 text-warning',
   ACCEPTED: 'bg-orange-50 text-orange-700',
   PROCESSING: 'bg-sky-50 text-sky-700',
   SHIPPED: 'bg-indigo-50 text-indigo-700',
-  DELIVERED: 'bg-emerald-50 text-emerald-700',
-  CANCELLED: 'bg-red-50 text-red-700',
+  DELIVERED: 'bg-success/10 text-success',
+  CANCELLED: 'bg-destructive/10 text-destructive',
 };
 
 function transitionLabel(status: string): string {

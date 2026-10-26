@@ -214,7 +214,7 @@ export function AdminReports({ auth }: { auth: AuthAdapter }) {
       </div>
 
       {selected?.capped ? (
-        <p className="rounded-md border bg-amber-50 p-3 text-sm text-amber-900">
+        <p className="rounded-md border bg-warning/10 p-3 text-sm text-foreground">
           {selected.label} is capped at {limit.toLocaleString('en-US')} rows.
           {data && data.length >= limit
             ? ' You have hit the cap — the export below is truncated, not complete. Narrow the window or raise the limit if you need every row.'

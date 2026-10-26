@@ -204,7 +204,7 @@ export function ShopOrders({ auth }: { auth: AuthAdapter }) {
         header: 'Order Number',
         className: 'font-medium',
         render: (order: OrderSummary) => (
-          <a href={`/shop/orders/${order.id}`} className="text-blue-600 hover:underline">
+          <a href={`/shop/orders/${order.id}`} className="text-primary hover:underline">
             {order.orderNumber}
           </a>
         ),
@@ -275,7 +275,7 @@ export function ShopOrders({ auth }: { auth: AuthAdapter }) {
               className={cn(
                 'inline-flex items-center gap-2 rounded-lg border px-4 py-2 text-sm transition-colors',
                 selected
-                  ? 'border-neutral-900 bg-neutral-900 text-white'
+                  ? 'border-primary bg-primary text-primary-foreground'
                   : 'bg-card text-foreground hover:bg-muted',
               )}
             >
@@ -315,7 +315,7 @@ export function ShopOrders({ auth }: { auth: AuthAdapter }) {
         toolbar={
           <div className="flex flex-wrap items-center gap-3 p-4">
             {selected.length > 0 ? (
-              <div className="flex flex-wrap items-center gap-2 rounded-lg border border-emerald-300 bg-emerald-50 px-3 py-2">
+              <div className="flex flex-wrap items-center gap-2 rounded-lg border border-emerald-300 bg-success/10 px-3 py-2">
                 <span className="text-sm font-medium text-emerald-900">
                   {selected.length} selected
                 </span>
@@ -425,7 +425,7 @@ export function ShopOrders({ auth }: { auth: AuthAdapter }) {
 
 function PaymentBadge({ method }: { method: string }) {
   const styles: Record<string, string> = {
-    ESAWA: 'bg-emerald-50 text-emerald-700',
+    ESAWA: 'bg-success/10 text-success',
     COD: 'bg-orange-50 text-orange-700',
     BANK_TRANSFER: 'bg-sky-50 text-sky-700',
   };
@@ -440,12 +440,12 @@ function StatusBadge({ status }: { status: string }) {
   // The colour is the status itself, so a shop owner reads the board by colour before reading
   // the word. Amber is waiting on you, green is done, red is gone wrong.
   const styles: Record<string, string> = {
-    PENDING: 'bg-amber-50 text-amber-700',
+    PENDING: 'bg-warning/10 text-warning',
     ACCEPTED: 'bg-orange-50 text-orange-700',
     PROCESSING: 'bg-sky-50 text-sky-700',
     SHIPPED: 'bg-indigo-50 text-indigo-700',
-    DELIVERED: 'bg-emerald-50 text-emerald-700',
-    CANCELLED: 'bg-red-50 text-red-700',
+    DELIVERED: 'bg-success/10 text-success',
+    CANCELLED: 'bg-destructive/10 text-destructive',
   };
   return (
     <Badge className={cn('font-medium', styles[status] ?? 'bg-muted text-muted-foreground')}>

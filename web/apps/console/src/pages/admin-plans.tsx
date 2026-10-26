@@ -155,7 +155,7 @@ export function AdminPlans({ auth }: { auth: AuthAdapter }) {
         header: 'Status',
         render: (plan) =>
           plan.isActive ? (
-            <Badge className="bg-emerald-50 text-emerald-700">On sale</Badge>
+            <Badge className="bg-success/10 text-success">On sale</Badge>
           ) : (
             <Badge className="bg-muted text-muted-foreground">Withdrawn</Badge>
           ),
@@ -364,8 +364,8 @@ function PlanDialog({
         </DialogHeader>
 
         {plan && plan.activeSubscribers > 0 ? (
-          <div className="flex items-start gap-2 rounded-md border border-amber-300 bg-amber-50 p-3 text-sm">
-            <ShieldAlert className="mt-0.5 size-4 shrink-0 text-amber-700" aria-hidden />
+          <div className="flex items-start gap-2 rounded-md border border-warning/40 bg-warning/10 p-3 text-sm">
+            <ShieldAlert className="mt-0.5 size-4 shrink-0 text-warning" aria-hidden />
             <p>
               Display fields can be edited. The price, the duration and the feature list cannot — and
               the server will refuse, which is better than an edit that appears to save and silently
@@ -474,7 +474,7 @@ function PlanDialog({
         </div>
 
         {missing.length > 0 ? (
-          <p className="rounded-md bg-amber-50 px-3 py-2 text-sm text-amber-800">
+          <p className="rounded-md bg-warning/10 px-3 py-2 text-sm text-foreground">
             Still needed: {missing.join(', ')}.
           </p>
         ) : null}

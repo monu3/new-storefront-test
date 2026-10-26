@@ -14,6 +14,7 @@
 import type { ReactNode } from 'react';
 
 import { formatPrice, sectionImageUrl } from './resolve';
+import { SafeImage } from './safe-image';
 import type { ProductSummary, ResolvedSection } from './resolve';
 import type { SectionType } from './schema';
 
@@ -78,26 +79,19 @@ function ProductCard({ product }: { product: ProductSummary }) {
   return (
     <SafeHref
       href={href}
-      className={`group flex flex-col overflow-hidden rounded-lg border bg-card text-card-foreground transition-colors hover:bg-muted ${
+      className={`group flex flex-col overflow-hidden rounded-2xl border border-border bg-card text-card-foreground transition-shadow hover:shadow-md ${
         unavailable ? 'opacity-60' : ''
       }`}
     >
       <div className="aspect-square w-full overflow-hidden bg-muted">
-        {product.imageUrl ? (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img
-            src={product.imageUrl}
-            alt={product.name}
-            loading="lazy"
-            className="h-full w-full object-cover transition-transform group-hover:scale-105"
-          />
-        ) : (
-          <div className="flex h-full items-center justify-center text-xs text-muted-foreground">
-            No image
-          </div>
-        )}
+        <SafeImage
+          src={product.imageUrl}
+          alt={product.name}
+          loading="lazy"
+          className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-[1.03]"
+        />
       </div>
-      <div className="flex flex-1 flex-col gap-1 p-3">
+      <div className="flex flex-1 flex-col gap-1 p-4">
         {product.categoryLabel ? (
           <span className="text-xs text-muted-foreground">{product.categoryLabel}</span>
         ) : null}
@@ -233,7 +227,7 @@ function Hero({ resolved }: SectionProps) {
 
   const copy = (
     <div className={centred ? 'mx-auto max-w-2xl text-center' : ''}>
-      <h1 className="text-3xl font-bold tracking-tight sm:text-4xl">
+      <h1 className="text-4xl font-semibold leading-[1.04] tracking-[-0.035em] sm:text-5xl">
         {text(section.props, 'heading', shop.name)}
       </h1>
       {text(section.props, 'subheading') ? (
@@ -244,7 +238,7 @@ function Hero({ resolved }: SectionProps) {
       {text(cta, 'label') ? (
         <SafeHref
           href={text(cta, 'href', '#products')}
-          className="mt-6 inline-flex h-11 items-center rounded-md bg-primary px-6 text-sm font-medium text-primary-foreground"
+          className="mt-6 inline-flex h-12 items-center rounded-full bg-primary px-7 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90"
         >
           {text(cta, 'label')}
         </SafeHref>
@@ -252,20 +246,18 @@ function Hero({ resolved }: SectionProps) {
     </div>
   );
 
-  const picture = image ? (
-    // eslint-disable-next-line @next/next/no-img-element
-    <img
+  const picture = (
+    // A placeholder rather than a broken image: a shop that has not uploaded a hero photograph
+    // still gets a homepage that looks deliberate. `SafeImage` also covers the case the previous
+    // code missed — a URL that exists but fails to load, which is what a deleted asset looks like.
+    <SafeImage
       src={image}
       alt=""
-      className="aspect-[4/3] w-full rounded-lg object-cover"
       loading="eager"
+      className="aspect-[4/3] w-full rounded-[1.5rem] object-cover"
+      fallbackClassName="flex aspect-[4/3] w-full items-center justify-center rounded-[1.5rem] bg-muted text-sm text-muted-foreground"
+      fallbackLabel="Add a hero image"
     />
-  ) : (
-    // A placeholder rather than a broken image: a shop that has not uploaded a hero photograph
-    // still gets a homepage that looks deliberate.
-    <div className="flex aspect-[4/3] w-full items-center justify-center rounded-lg bg-muted text-sm text-muted-foreground">
-      Add a hero image
-    </div>
   );
 
   return (
@@ -312,13 +304,15 @@ function PromoBanner({ resolved }: SectionProps) {
   const overlay = Math.min(Math.max(num(section.props, 'overlay', 0.4), 0), 0.9);
 
   return (
-    <section className="relative overflow-hidden rounded-lg">
-      {image ? (
-        // eslint-disable-next-line @next/next/no-img-element
-        <img src={image} alt="" loading="lazy" className="h-56 w-full object-cover sm:h-72" />
-      ) : (
-        <div className="h-56 w-full bg-muted sm:h-72" />
-      )}
+    <section className="relative overflow-hidden rounded-[1.75rem]">
+      <SafeImage
+        src={image}
+        alt=""
+        loading="lazy"
+        className="h-56 w-full object-cover sm:h-72"
+        fallbackClassName="h-56 w-full bg-muted sm:h-72"
+        fallbackLabel=""
+      />
       {overlay > 0 ? (
         <div className="absolute inset-0 bg-black" style={{ opacity: overlay }} aria-hidden />
       ) : null}
@@ -393,13 +387,15 @@ function ImageWithText({ resolved }: SectionProps) {
   const image = sectionImageUrl(resolved);
   const right = text(section.props, 'imagePosition', 'left') === 'right';
 
-  const picture = image ? (
-    // eslint-disable-next-line @next/next/no-img-element
-    <img src={image} alt="" loading="lazy" className="w-full rounded-lg object-cover" />
-  ) : (
-    <div className="flex aspect-[4/3] w-full items-center justify-center rounded-lg bg-muted text-sm text-muted-foreground">
-      Add an image
-    </div>
+  const picture = (
+    <SafeImage
+      src={image}
+      alt=""
+      loading="lazy"
+      className="aspect-[4/3] w-full rounded-[1.5rem] object-cover"
+      fallbackClassName="flex aspect-[4/3] w-full items-center justify-center rounded-[1.5rem] bg-muted text-sm text-muted-foreground"
+      fallbackLabel="Add an image"
+    />
   );
 
   return (
@@ -407,7 +403,7 @@ function ImageWithText({ resolved }: SectionProps) {
       {right ? (
         <>
           <div>
-            <h2 className="text-2xl font-bold">{text(section.props, 'heading')}</h2>
+            <h2 className="text-3xl font-semibold tracking-tight">{text(section.props, 'heading')}</h2>
             <p className="mt-3 text-sm leading-relaxed text-muted-foreground">
               {text(section.props, 'body')}
             </p>
@@ -418,7 +414,7 @@ function ImageWithText({ resolved }: SectionProps) {
         <>
           {picture}
           <div>
-            <h2 className="text-2xl font-bold">{text(section.props, 'heading')}</h2>
+            <h2 className="text-3xl font-semibold tracking-tight">{text(section.props, 'heading')}</h2>
             <p className="mt-3 text-sm leading-relaxed text-muted-foreground">
               {text(section.props, 'body')}
             </p>
@@ -509,8 +505,15 @@ function Gallery({ resolved }: SectionProps) {
         style={{ gridTemplateColumns: `repeat(${columns}, minmax(0, 1fr))` }}
       >
         {mediaIds.map((id, i) => (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img key={id ?? i} src={id} alt="" loading="lazy" className="aspect-square w-full rounded-lg object-cover" />
+          <SafeImage
+            key={id ?? i}
+            src={id}
+            alt=""
+            loading="lazy"
+            className="aspect-square w-full rounded-2xl object-cover"
+            fallbackClassName="flex aspect-square w-full items-center justify-center rounded-2xl bg-muted text-xs text-muted-foreground"
+            fallbackLabel="Image unavailable"
+          />
         ))}
       </div>
     </Section>
@@ -702,34 +705,54 @@ function SiteHeader({ resolved }: SectionProps) {
 
   return (
     <header
-      className={`border-b bg-background ${sticky ? 'sticky top-0 z-40' : ''}`}
+      /*
+        Offset from the top by the height of the platform bar above it. Both are `sticky`, and two
+        elements pinned to `top: 0` do not stack — the shop header would slide underneath the
+        platform bar and disappear exactly when a customer scrolled to use it.
+
+        The bar itself is a pill, matching the platform chrome above. A shop's header is the first
+        thing that says "you are in this shop now", and a full-width strip with a hairline reads as
+        another divider in a page that already has several.
+      */
+      className={`${sticky ? 'sticky top-[4.5rem] z-30' : ''} -mx-4 px-4 pb-3 pt-4 sm:-mx-6 sm:px-6`}
       data-section="site-header"
     >
-      <div className="mx-auto flex max-w-6xl flex-wrap items-center gap-4 px-4 py-3">
-        <div className="flex min-w-0 items-center gap-2">
+      <div className="flex flex-wrap items-center gap-2 rounded-full border border-border/80 bg-card/90 px-2 py-2 shadow-sm backdrop-blur-xl sm:flex-nowrap">
+        <a
+          href={`/s/${shop.slug}`}
+          className="flex min-w-0 items-center gap-2.5 rounded-full py-0.5 pl-0.5 pr-2"
+        >
           {props.showLogo !== false && shop.logoUrl ? (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img src={shop.logoUrl} alt="" className="size-8 shrink-0 rounded object-cover" />
+            <span className="size-9 shrink-0 overflow-hidden rounded-full bg-secondary">
+              <SafeImage
+                src={shop.logoUrl}
+                alt=""
+                loading="eager"
+                className="size-full object-cover"
+                fallbackClassName="grid size-full place-items-center text-[11px] font-semibold text-muted-foreground"
+                fallbackLabel={shop.name.slice(0, 2).toUpperCase()}
+              />
+            </span>
           ) : null}
           {props.showShopName !== false ? (
             <span className="truncate font-semibold">{shop.name}</span>
           ) : null}
-        </div>
+        </a>
 
-        <nav aria-label="Shop menu" className="order-3 w-full sm:order-2 sm:w-auto sm:flex-1">
-          <ul className="flex flex-wrap items-center gap-1 text-sm">
+        <nav aria-label="Shop menu" className="order-3 w-full sm:order-none sm:w-auto sm:flex-1">
+          <ul className="flex flex-wrap items-center gap-0.5 text-sm">
             {menu.map((item: Record<string, unknown>, i: number) => (
               <li key={`${text(item, 'label', 'link')}-${i}`}>
                 <SafeHref
                   href={text(item, 'href', '#')}
-                  className="rounded-md px-2.5 py-1.5 transition-colors hover:bg-muted"
+                  className="inline-flex rounded-full px-3 py-1.5 text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground"
                 >
                   {text(item, 'label', 'Link')}
                 </SafeHref>
               </li>
             ))}
             {menu.length === 0 ? (
-              <li className="px-2.5 py-1.5 text-xs text-muted-foreground">
+              <li className="px-3 py-1.5 text-xs text-muted-foreground">
                 Add links, or publish some products so your categories appear here.
               </li>
             ) : null}
@@ -737,13 +760,22 @@ function SiteHeader({ resolved }: SectionProps) {
         </nav>
 
         {props.showSearch !== false ? (
-          <span className="order-2 ml-auto inline-flex items-center gap-1.5 text-sm text-muted-foreground sm:order-3">
+          /*
+            A link, not a label. This was a `<span>` containing a magnifier and the word "Search" —
+            it looked like a control, could not be clicked, and had no destination. The platform's
+            `/search` route did not exist either; it does now, and this points at it.
+          */
+          <a
+            href="/search"
+            className="ml-auto inline-flex shrink-0 items-center gap-2 rounded-full border border-border bg-background px-3.5 py-1.5 text-sm text-muted-foreground transition-colors hover:text-foreground sm:ml-0"
+          >
             <svg viewBox="0 0 24 24" className="size-4" fill="none" stroke="currentColor" strokeWidth={2} aria-hidden>
               <circle cx="11" cy="11" r="7" />
               <path d="m20 20-3.5-3.5" strokeLinecap="round" />
             </svg>
-            Search
-          </span>
+            <span className="hidden sm:inline">Search</span>
+            <span className="sr-only sm:hidden">Search</span>
+          </a>
         ) : null}
       </div>
     </header>
@@ -757,47 +789,58 @@ function SiteFooter({ resolved }: SectionProps) {
   const year = new Date().getFullYear();
 
   return (
-    <footer className="mt-12 border-t bg-muted/30" data-section="site-footer">
-      <div className="mx-auto max-w-6xl px-4 py-10">
-        <div className="flex flex-wrap gap-8">
-          <div className="min-w-[220px] flex-1">
+    <footer
+      className="mt-14 rounded-[1.75rem] border border-border bg-card px-6 py-10 sm:px-10"
+      data-section="site-footer"
+    >
+      <div className="flex flex-wrap gap-10">
+        <div className="min-w-[220px] flex-1">
+          <div className="flex items-center gap-2.5">
+            <span className="grid size-8 place-items-center rounded-full bg-primary text-[11px] font-semibold text-primary-foreground">
+              {shop.name.slice(0, 2).toUpperCase()}
+            </span>
             <p className="font-semibold">{shop.name}</p>
-            {text(props, 'about') || shop.description ? (
-              <p className="mt-2 text-sm text-muted-foreground">
-                {text(props, 'about') || shop.description}
-              </p>
-            ) : null}
           </div>
-
-          {columns.map((col: Record<string, unknown>, i: number) => {
-            const items = Array.isArray(col.links) ? col.links : [];
-            return (
-              <div key={`${text(col, 'title', 'col')}-${i}`}>
-                <p className="text-sm font-medium">{text(col, 'title', 'Links')}</p>
-                <ul className="mt-2 space-y-1.5 text-sm">
-                  {items.map((item: Record<string, unknown>, j: number) => (
-                    <li key={`${text(item, 'label', 'l')}-${j}`}>
-                      <SafeHref href={text(item, 'href', '#')} className="text-muted-foreground hover:text-foreground">
-                        {text(item, 'label', 'Link')}
-                      </SafeHref>
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            );
-          })}
-        </div>
-
-        <div className="mt-8 flex flex-wrap items-center justify-between gap-3 border-t pt-6 text-xs text-muted-foreground">
-          <p>{text(props, 'copyright') || `© ${year} ${shop.name}`}</p>
-          {props.showPaymentBadges !== false ? (
-            <p className="inline-flex items-center gap-2">
-              <span className="rounded border px-1.5 py-0.5">eSewa</span>
-              <span className="rounded border px-1.5 py-0.5">Cash on delivery</span>
-              <span className="rounded border px-1.5 py-0.5">Bank transfer</span>
+          {text(props, 'about') || shop.description ? (
+            <p className="mt-4 max-w-sm text-sm leading-relaxed text-muted-foreground">
+              {text(props, 'about') || shop.description}
             </p>
           ) : null}
         </div>
+
+        {columns.map((col: Record<string, unknown>, i: number) => {
+          const items = Array.isArray(col.links) ? col.links : [];
+          return (
+            <div key={`${text(col, 'title', 'col')}-${i}`}>
+              <p className="text-xs font-medium uppercase tracking-[0.08em] text-muted-foreground">
+                {text(col, 'title', 'Links')}
+              </p>
+              <ul className="mt-4 space-y-2.5 text-sm">
+                {items.map((item: Record<string, unknown>, j: number) => (
+                  <li key={`${text(item, 'label', 'l')}-${j}`}>
+                    <SafeHref
+                      href={text(item, 'href', '#')}
+                      className="text-muted-foreground transition-colors hover:text-primary"
+                    >
+                      {text(item, 'label', 'Link')}
+                    </SafeHref>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          );
+        })}
+      </div>
+
+      <div className="mt-9 flex flex-wrap items-center justify-between gap-3 border-t border-border/70 pt-6 text-xs text-muted-foreground">
+        <p>{text(props, 'copyright') || `© ${year} ${shop.name}`}</p>
+        {props.showPaymentBadges !== false ? (
+          <p className="inline-flex items-center gap-2">
+            <span className="rounded-full border border-border px-2.5 py-1">eSewa</span>
+            <span className="rounded-full border border-border px-2.5 py-1">Cash on delivery</span>
+            <span className="rounded-full border border-border px-2.5 py-1">Bank transfer</span>
+          </p>
+        ) : null}
       </div>
     </footer>
   );

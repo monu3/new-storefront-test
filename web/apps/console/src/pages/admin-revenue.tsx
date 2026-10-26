@@ -165,7 +165,7 @@ export function AdminRevenue({ auth }: { auth: AuthAdapter }) {
         {data.waiverCoverage ? (
           <Card
             className={cn(
-              Number(data.waiverCoverage) < 1 && 'border-amber-300 bg-amber-50/40',
+              Number(data.waiverCoverage) < 1 && 'border-warning/40 bg-warning/10/40',
             )}
           >
             <CardContent className="p-4">
@@ -260,7 +260,7 @@ function Stat({
   tone?: 'plain' | 'warn';
 }) {
   return (
-    <Card className={cn(tone === 'warn' && 'border-amber-300')}>
+    <Card className={cn(tone === 'warn' && 'border-warning/40')}>
       <CardContent className="p-4">
         <p className="flex items-center gap-1.5 text-xs font-medium uppercase tracking-wide text-muted-foreground">
           {icon}

@@ -321,7 +321,7 @@ function StatusBadge({ status }: { status: string }) {
         : status === 'REJECTED'
           ? 'bg-orange-100 text-orange-800'
           : status === 'PENDING_REVIEW'
-            ? 'bg-amber-100 text-amber-800'
+            ? 'bg-amber-100 text-foreground'
             : 'bg-muted text-muted-foreground';
 
   return (

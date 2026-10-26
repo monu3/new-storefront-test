@@ -114,16 +114,20 @@ export interface AuthAdapter {
 /**
  * Keycloak PKCE adapter.
  *
- * <p><b>No silent SSO check, deliberately.</b> `onLoad: 'check-sso'` makes keycloak-js load a
- * hidden iframe at `silentCheckSsoRedirectUri` and wait for Keycloak to post a callback back.
- * Neither frontend serves that route — the Vite console answers it with the SPA shell (200, HTML)
- * and the Next.js storefront answers 404 — so neither is a callback and the promise never
- * settles. An explicit login is also the honest behaviour for a console that only shop owners and
- * admins use: they should be asked who they are rather than silently relying on an ambient
- * session.
+ * <p><b>A silent SSO check, and it has a real cost.</b> `onLoad: 'check-sso'` makes keycloak-js
+ * load a hidden iframe at `silentCheckSsoRedirectUri` and wait for Keycloak to post a callback
+ * back. Both apps now ship the `silent-check-sso.html` page that makes this settle; without it the
+ * promise never resolves and the console renders white. The earlier note here claimed there was no
+ * silent check, which stopped being true when those pages landed.
  *
- * <p>Silent SSO can return with a real `/silent-check-sso` page per app. It needs that page to
- * actually exist first.
+ * <p>The cost is latency, and it is not small: on a cold load in this environment the round trip
+ * measured 3.5–6 seconds before {@link AuthAdapter.init} resolved. Anything that renders from the
+ * session therefore needs a sensible *unsigned-in* default rather than a spinner or a skeleton —
+ * see the customer shell's header, which shows "Sign in" while it waits.
+ *
+ * <p>Two deliberate choices follow about the iframe: `checkLoginIframe: false`, because polling a
+ * third-party iframe every few seconds is a battery and privacy cost for a storefront; refresh is
+ * driven by the token's own expiry instead.
  *
  * Two deliberate choices:
  *

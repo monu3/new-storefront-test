@@ -249,7 +249,7 @@ function CurrentPlanCard({
             <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
               <span className="text-lg font-semibold">{current.planName}</span>
               {current.willNotRenew ? (
-                <Badge className="bg-amber-50 text-amber-700">Will not renew</Badge>
+                <Badge className="bg-warning/10 text-warning">Will not renew</Badge>
               ) : null}
             </div>
 
@@ -312,14 +312,14 @@ function CurrentPlanCard({
 function CommissionBadge({ paysCommission }: { paysCommission: boolean }) {
   if (paysCommission) {
     return (
-      <Badge className="bg-amber-50 text-amber-700" title="Charged on each order you accept">
+      <Badge className="bg-warning/10 text-warning" title="Charged on each order you accept">
         <CircleDollarSign className="mr-1 size-3.5" aria-hidden />
         5% commission
       </Badge>
     );
   }
   return (
-    <Badge className="bg-emerald-50 text-emerald-700">
+    <Badge className="bg-success/10 text-success">
       <BadgeCheck className="mr-1 size-3.5" aria-hidden />
       No commission
     </Badge>
@@ -376,7 +376,7 @@ function PaymentStep({
   });
 
   return (
-    <Card className="border-amber-300">
+    <Card className="border-warning/40">
       <CardHeader>
         <CardTitle className="flex items-center gap-2">
           <Clock className="size-4" aria-hidden />
@@ -480,7 +480,7 @@ function FeaturesCard({ features }: { features: FeatureGrant[] }) {
               key={feature.key}
               className="flex items-start gap-2 rounded-md border p-3 text-sm"
             >
-              <Check className="mt-0.5 size-4 shrink-0 text-emerald-600" aria-hidden />
+              <Check className="mt-0.5 size-4 shrink-0 text-success" aria-hidden />
               <div className="min-w-0">
                 <p className="font-medium">{describeGrant(feature.key, feature.limit)}</p>
                 {feature.materialised ? null : (
@@ -580,7 +580,7 @@ function PlansCard({
                   <ul className="mt-3 flex-1 space-y-1">
                     {plan.grants.map((grant) => (
                       <li key={grant} className="flex items-start gap-1.5 text-sm">
-                        <Check className="mt-0.5 size-3.5 shrink-0 text-emerald-600" aria-hidden />
+                        <Check className="mt-0.5 size-3.5 shrink-0 text-success" aria-hidden />
                         <span>{grant}</span>
                       </li>
                     ))}
@@ -678,8 +678,8 @@ function HistoryCard({ history }: { history: SubscriptionHistoryEntry[] }) {
 /** The database enum on the left, what it means on the right. */
 function StatusBadge({ status }: { status: string }) {
   const tone: Record<string, string> = {
-    ACTIVE: 'bg-emerald-50 text-emerald-700',
-    PENDING_PAYMENT: 'bg-amber-50 text-amber-700',
+    ACTIVE: 'bg-success/10 text-success',
+    PENDING_PAYMENT: 'bg-warning/10 text-warning',
     EXPIRED: 'bg-muted text-muted-foreground',
     CANCELLED: 'bg-muted text-muted-foreground',
   };

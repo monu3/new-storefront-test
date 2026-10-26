@@ -367,8 +367,8 @@ function RejectDialog({
 
 function StatusBadge({ status }: { status: QueueItem['status'] }) {
   const tone: Record<QueueItem['status'], string> = {
-    PENDING: 'bg-amber-50 text-amber-700',
-    APPROVED: 'bg-emerald-50 text-emerald-700',
+    PENDING: 'bg-warning/10 text-warning',
+    APPROVED: 'bg-success/10 text-success',
     REJECTED: 'bg-muted text-muted-foreground',
   };
   return (

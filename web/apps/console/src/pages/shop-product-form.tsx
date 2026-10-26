@@ -207,7 +207,7 @@ export function ShopProductForm({ auth }: { auth: AuthAdapter }) {
                 const active = step === s.key;
                 const IconBg = cn(
                   'grid size-9 shrink-0 place-items-center rounded-full transition-colors',
-                  active ? 'bg-neutral-900 text-white' : 'bg-muted text-muted-foreground',
+                  active ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground',
                 );
                 return (
                   <li key={s.key}>
@@ -217,7 +217,7 @@ export function ShopProductForm({ auth }: { auth: AuthAdapter }) {
                       aria-current={active ? 'step' : undefined}
                       className={cn(
                         'flex w-full items-center gap-3 rounded-lg p-2 text-left transition-colors',
-                        active ? 'bg-neutral-900' : 'hover:bg-muted',
+                        active ? 'bg-primary' : 'hover:bg-muted',
                       )}
                     >
                       <span className={IconBg}>
@@ -227,7 +227,7 @@ export function ShopProductForm({ auth }: { auth: AuthAdapter }) {
                         <span
                           className={cn(
                             'block truncate text-sm font-medium',
-                            active ? 'text-white' : 'text-foreground',
+                            active ? 'text-primary-foreground' : 'text-foreground',
                           )}
                         >
                           {s.label}
@@ -235,7 +235,7 @@ export function ShopProductForm({ auth }: { auth: AuthAdapter }) {
                         <span
                           className={cn(
                             'block truncate text-xs',
-                            active ? 'text-neutral-400' : 'text-muted-foreground',
+                            active ? 'text-primary-foreground/70' : 'text-muted-foreground',
                           )}
                         >
                           {s.hint}
@@ -401,7 +401,7 @@ export function ShopProductForm({ auth }: { auth: AuthAdapter }) {
                           />
                           {index === 0 ? (
                             <span className="absolute left-1.5 top-1.5">
-                              <Badge className="bg-emerald-600 text-[10px] text-white">Primary</Badge>
+                              <Badge className="bg-success text-[10px] text-white">Primary</Badge>
                             </span>
                           ) : null}
                           <button
@@ -449,7 +449,7 @@ export function ShopProductForm({ auth }: { auth: AuthAdapter }) {
                 )}
 
                 {uploadError ? (
-                  <p role="alert" className="mt-3 rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">
+                  <p role="alert" className="mt-3 rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">
                     {uploadError}
                   </p>
                 ) : null}
@@ -611,7 +611,7 @@ export function ShopProductForm({ auth }: { auth: AuthAdapter }) {
       {problems.length > 0 ? (
         <div
           role="alert"
-          className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700"
+          className="rounded-lg border border-red-200 bg-destructive/10 px-4 py-3 text-sm text-destructive"
         >
           <p className="font-medium">
             Fix {problems.length} problem{problems.length === 1 ? '' : 's'} before saving:
@@ -632,7 +632,7 @@ export function ShopProductForm({ auth }: { auth: AuthAdapter }) {
         </div>
       ) : null}
 
-      <div className="sticky bottom-0 flex justify-end gap-3 rounded-lg bg-neutral-800 px-5 py-3">
+      <div className="sticky bottom-0 flex justify-end gap-3 rounded-lg border-t border-border bg-background px-5 py-3">
         <Button
           onClick={() => navigate('/shop/products')}
           style={{ background: '#ef4444', color: '#fff' }}
@@ -848,7 +848,7 @@ function Field({
       </Label>
       <div className="mt-1.5">{children}</div>
       {error ? (
-        <p className="mt-1 text-xs text-red-600" role="alert">
+        <p className="mt-1 text-xs text-destructive" role="alert">
           {error}
         </p>
       ) : null}

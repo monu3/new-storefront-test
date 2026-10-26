@@ -262,7 +262,7 @@ export function ShopTheme({ auth }: { auth: AuthAdapter }) {
             // The ported Badge has no 'warning' variant, and inventing one would mean the kit and
             // the reference diverge. Outline plus a dot says the same thing honestly.
             <Badge variant="outline">
-              <span aria-hidden className="mr-1.5 inline-block size-1.5 rounded-full bg-amber-500" />
+              <span aria-hidden className="mr-1.5 inline-block size-1.5 rounded-full bg-warning/100" />
               Changes not published yet
             </Badge>
           ) : null}
@@ -286,7 +286,7 @@ export function ShopTheme({ auth }: { auth: AuthAdapter }) {
         <p className="rounded-md border bg-muted/40 px-3 py-2 text-sm">{status}</p>
       ) : null}
       {issues.length > 0 ? (
-        <ul className="rounded-md border border-amber-500/40 bg-amber-500/10 p-3 text-sm">
+        <ul className="rounded-md border border-amber-500/40 bg-warning/100/10 p-3 text-sm">
           {issues.map((i) => (
             <li key={i}>{i}</li>
           ))}

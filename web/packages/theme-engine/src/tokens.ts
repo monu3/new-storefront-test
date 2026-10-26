@@ -20,6 +20,37 @@ const COLOUR_TOKENS = new Set([
 ]);
 
 /**
+ * Tokens whose value is a font *family name* rather than a complete stack.
+ *
+ * <p>See {@link fontStack} for why these cannot be emitted as-written.
+ */
+const FONT_TOKENS = new Set(['fontHeading', 'fontBody']);
+
+/**
+ * Ensures a font token always ends in a generic family.
+ *
+ * <p><b>A theme naming a font that is not installed used to render in Times.</b> The token was
+ * emitted verbatim as `--font-heading: Inter`, and `styles.css` consumed it as
+ * `font-family: var(--font-heading, inherit)`. A CSS font-family list with no generic fallback and
+ * no installed match does not inherit or degrade to the system sans — the browser drops to its own
+ * default, which on Chrome is a serif. Every seeded template names Inter, and Inter is installed on
+ * almost no machine, so a brand-new shop's headings were serif: a shop that had chosen "Inter" was
+ * being served the opposite of its choice, with nothing anywhere reporting a problem.
+ *
+ * <p>The platform does not ship webfonts (no network font on a storefront that has to work on a
+ * slow connection), so the honest thing is a stack: try the requested family, then the system UI
+ * face. Owners who paste a full stack are left alone.
+ */
+function fontStack(value: string): string {
+  const trimmed = value.trim();
+  if (!trimmed) return '';
+  if (trimmed.includes(',')) return trimmed;
+
+  const family = trimmed.replace(/["'\\;]/g, '').trim();
+  return family ? `"${family}", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif` : '';
+}
+
+/**
  * Each colour and the foreground that stays readable on top of it.
  *
  * <p>A shop picks a brand colour and gets white button text unconditionally otherwise. Choose a
@@ -181,6 +212,12 @@ export function tokensToCssVariables(tokens: ThemeTokens): Record<string, string
 
   for (const [key, value] of Object.entries(safe)) {
     if (value == null) continue;
+
+    if (FONT_TOKENS.has(key)) {
+      const stack = fontStack(String(value));
+      if (stack) vars[camelToCssVar(key)] = stack;
+      continue;
+    }
 
     const triplet = COLOUR_TOKENS.has(key) ? hexToHslTriplet(String(value)) : null;
     // A colour token that failed to parse is skipped rather than emitted raw: the browser would

@@ -229,7 +229,7 @@ export function ShopReturns({ auth }: { auth: AuthAdapter }) {
       )}
 
       {refund.error && /balance|afford/i.test(refund.error.message) ? (
-        <p className="rounded-md border bg-amber-50 p-3 text-sm text-amber-900">
+        <p className="rounded-md border bg-warning/10 p-3 text-sm text-foreground">
           The refund did not run: your balance will not cover it. The return is still approved and
           still in this list — top up and press Refund again once you can.
         </p>
@@ -434,8 +434,8 @@ function StatusBadge({ status }: { status: string }) {
       : status === 'REJECTED'
         ? 'bg-muted text-muted-foreground'
         : status === 'APPROVED'
-          ? 'bg-amber-100 text-amber-800'
-          : 'bg-blue-100 text-blue-800';
+          ? 'bg-amber-100 text-foreground'
+          : 'bg-secondary text-blue-800';
 
   return (
     <Badge variant="secondary" className={cn(className)}>
